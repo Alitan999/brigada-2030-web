@@ -61,6 +61,11 @@
 // conectar; la conexión espera hasta 60 s, igual que la APK.
 const RELAY_HOST = "brigada-online-server.bonto.page";
 const RELAY_URL = "wss://" + RELAY_HOST;
+// URL HTTP del mismo relay: Bonto NO despierta con intentos de WebSocket
+// solos (probado en vivo: dos intentos de 60 s no crearon sala); solo
+// despierta con una petición HTTP normal a su raíz. Por eso, antes de
+// abrir el WebSocket se le pega primero a esta URL con fetch.
+const RELAY_HTTP_URL = "https://" + RELAY_HOST + "/";
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -2614,10 +2619,45 @@ class RelayLink {
     this.retryMs = 0;         // ventana total de reintentos al conectar
     this.deadline = 0;
     this.retryTimer = null;
+    this.wakeStarted = false; // ya se hizo la petición HTTP que despierta a Bonto
   }
   _connect() {
     this.running = true;
     if (this.retryMs > 0 && !this.deadline) this.deadline = Date.now() + this.retryMs;
+    if (!this.wakeStarted) {
+      // Primer intento: antes del WebSocket, una petición HTTP normal a
+      // la raíz del relay para despertarlo (los reintentos por WebSocket
+      // solos NO lo despiertan). Se espera a que esa petición termine
+      // (con tiempo generoso) y ya entonces se abre el WebSocket; si la
+      // petición falla o se cuelga, se intenta el WebSocket de todos
+      // modos y el ciclo de reintentos de 60 s sigue corriendo.
+      this.wakeStarted = true;
+      this._wakeHttp(() => { if (this.running) this._openSocket(); });
+      return;
+    }
+    // En cada reintento se vuelve a empujar por HTTP, por si acaso.
+    this._wakeHttp(null);
+    this._openSocket();
+  }
+  /** Petición HTTP de despertar: no importa la respuesta (Bonto puede
+   *  tardar en servirla mientras despierta), solo que la petición llegue.
+   *  done se llama una sola vez, al responder, al fallar o al vencer el
+   *  tiempo de espera generoso de 30 s. */
+  _wakeHttp(done) {
+    let finished = false;
+    const finish = () => { if (!finished) { finished = true; if (done) done(); } };
+    try {
+      const ctl = ("AbortController" in window) ? new AbortController() : null;
+      const timer = setTimeout(() => {
+        if (ctl) { try { ctl.abort(); } catch (e) {} }
+        finish();
+      }, 30000);
+      fetch(RELAY_HTTP_URL, { mode: "no-cors", cache: "no-store", signal: ctl ? ctl.signal : undefined })
+        .then(() => { clearTimeout(timer); finish(); })
+        .catch(() => { clearTimeout(timer); finish(); });
+    } catch (e) { finish(); }
+  }
+  _openSocket() {
     let ws;
     try { ws = new WebSocket(RELAY_URL); } catch (e) {
       this._closed();
@@ -2680,7 +2720,7 @@ class RelayLink {
   stop() {
     this.running = false; this.connected = false;
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
-    this.deadline = 0; this.hello = null;
+    this.deadline = 0; this.hello = null; this.wakeStarted = false;
     if (this.ws) { try { this.ws.close(); } catch (e) {} this.ws = null; }
   }
 }
