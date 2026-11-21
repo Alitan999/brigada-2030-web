@@ -174,18 +174,28 @@ class Anim {
 // ---------------------------------------------------------------------------
 // Carga de imágenes originales (assets/ del juego: sprites, fondos, HUD)
 // ---------------------------------------------------------------------------
-const MANIFEST = {"aqua/agachado_01": "aqua/agachado_01.png", "aqua/agachado_02": "aqua/agachado_02.png", "aqua/agachado_03": "aqua/agachado_03.png", "aqua/agachado_04": "aqua/agachado_04.png", "aqua/agachado_05": "aqua/agachado_05.png", "aqua/caminando_01": "aqua/caminando_01.png", "aqua/caminando_02": "aqua/caminando_02.png", "aqua/caminando_03": "aqua/caminando_03.png", "aqua/caminando_04": "aqua/caminando_04.png", "aqua/caminando_05": "aqua/caminando_05.png", "aqua/caminando_06": "aqua/caminando_06.png", "aqua/caminando_07": "aqua/caminando_07.png", "aqua/corriendo_02": "aqua/corriendo_02.png", "aqua/corriendo_03": "aqua/corriendo_03.png", "aqua/corriendo_04": "aqua/corriendo_04.png", "aqua/corriendo_05": "aqua/corriendo_05.png", "aqua/corriendo_06": "aqua/corriendo_06.png", "aqua/corriendo_07": "aqua/corriendo_07.png", "aqua/disparando_bolas_01": "aqua/disparando_bolas_01.png", "aqua/disparando_bolas_02": "aqua/disparando_bolas_02.png", "aqua/disparando_bolas_03": "aqua/disparando_bolas_03.png", "aqua/disparando_bolas_04": "aqua/disparando_bolas_04.png", "aqua/idle_quieto_01": "aqua/idle_quieto_01.png", "aqua/idle_quieto_02": "aqua/idle_quieto_02.png", "aqua/idle_quieto_03": "aqua/idle_quieto_03.png", "aqua/idle_quieto_04": "aqua/idle_quieto_04.png", "aqua/idle_quieto_05": "aqua/idle_quieto_05.png", "aqua/idle_quieto_06": "aqua/idle_quieto_06.png", "aqua/proyectiles_bola_cabello_01": "aqua/proyectiles_bola_cabello_01.png", "aqua/proyectiles_bola_cabello_02": "aqua/proyectiles_bola_cabello_02.png", "aqua/proyectiles_bola_cabello_03": "aqua/proyectiles_bola_cabello_03.png", "aqua/proyectiles_bola_cabello_04": "aqua/proyectiles_bola_cabello_04.png", "aqua/proyectiles_bola_cabello_05": "aqua/proyectiles_bola_cabello_05.png", "aqua/proyectiles_bola_cabello_06": "aqua/proyectiles_bola_cabello_06.png", "aqua/proyectiles_bola_cabello_07": "aqua/proyectiles_bola_cabello_07.png", "aqua/proyectiles_bola_cabello_08": "aqua/proyectiles_bola_cabello_08.png", "aqua/proyectiles_bola_cabello_09": "aqua/proyectiles_bola_cabello_09.png", "aqua/proyectiles_bola_cabello_10": "aqua/proyectiles_bola_cabello_10.png", "aqua/proyectiles_bola_cabello_11": "aqua/proyectiles_bola_cabello_11.png", "aqua/proyectiles_bola_cabello_12": "aqua/proyectiles_bola_cabello_12.png", "aqua/proyectiles_bola_cabello_13": "aqua/proyectiles_bola_cabello_13.png", "aqua/proyectiles_bola_cabello_14": "aqua/proyectiles_bola_cabello_14.png", "aqua/reaccion_impacto_02": "aqua/reaccion_impacto_02.png", "aqua/reaccion_impacto_03": "aqua/reaccion_impacto_03.png", "aqua/reaccion_impacto_04": "aqua/reaccion_impacto_04.png", "aqua/reaccion_impacto_05": "aqua/reaccion_impacto_05.png", "aqua/reaccion_impacto_06": "aqua/reaccion_impacto_06.png", "aqua/reaccion_impacto_07": "aqua/reaccion_impacto_07.png", "aqua/reaccion_impacto_08": "aqua/reaccion_impacto_08.png", "aqua/reaccion_impacto_09": "aqua/reaccion_impacto_09.png", "aqua/reaccion_impacto_10": "aqua/reaccion_impacto_10.png", "aqua/reaccion_impacto_11": "aqua/reaccion_impacto_11.png", "aqua/salto_02": "aqua/salto_02.png", "aqua/salto_03": "aqua/salto_03.png", "aqua/salto_04": "aqua/salto_04.png", "aqua/salto_05": "aqua/salto_05.png", "aqua/salto_06": "aqua/salto_06.png", "corvo/defeat_01": "corvo/defeat_01.png", "corvo/defeat_02": "corvo/defeat_02.png", "corvo/defeat_03": "corvo/defeat_03.png", "corvo/defeat_04": "corvo/defeat_04.png", "corvo/defeat_05": "corvo/defeat_05.png", "corvo/flap_01": "corvo/flap_01.png", "corvo/flap_02": "corvo/flap_02.png", "corvo/flap_03": "corvo/flap_03.png", "corvo/flap_04": "corvo/flap_04.png", "corvo/flap_05": "corvo/flap_05.png", "corvo/flap_06": "corvo/flap_06.png", "corvo/flap_07": "corvo/flap_07.png", "corvo/hit_01": "corvo/hit_01.png", "corvo/hit_02": "corvo/hit_02.png", "corvo/hit_03": "corvo/hit_03.png", "corvo/hit_04": "corvo/hit_04.png", "corvo/hit_05": "corvo/hit_05.png", "corvo/idle_01": "corvo/idle_01.png", "corvo/idle_02": "corvo/idle_02.png", "corvo/idle_03": "corvo/idle_03.png", "corvo/idle_04": "corvo/idle_04.png", "corvo/idle_05": "corvo/idle_05.png", "corvo/idle_06": "corvo/idle_06.png", "corvo/idle_07": "corvo/idle_07.png", "corvo/idle_08": "corvo/idle_08.png", "corvo/move_01": "corvo/move_01.png", "corvo/move_02": "corvo/move_02.png", "corvo/move_03": "corvo/move_03.png", "corvo/move_04": "corvo/move_04.png", "corvo/move_05": "corvo/move_05.png", "corvo/move_06": "corvo/move_06.png", "corvo/move_07": "corvo/move_07.png", "corvo/move_08": "corvo/move_08.png", "corvo/wing_attack_01": "corvo/wing_attack_01.png", "corvo/wing_attack_02": "corvo/wing_attack_02.png", "corvo/wing_attack_03": "corvo/wing_attack_03.png", "corvo/wing_attack_04": "corvo/wing_attack_04.png", "corvo/wing_attack_05": "corvo/wing_attack_05.png", "corvo/wing_attack_06": "corvo/wing_attack_06.png", "corvo/wing_attack_07": "corvo/wing_attack_07.png", "hazmat/defeat_01": "hazmat/defeat_01.png", "hazmat/defeat_02": "hazmat/defeat_02.png", "hazmat/defeat_03": "hazmat/defeat_03.png", "hazmat/defeat_04": "hazmat/defeat_04.png", "hazmat/defeat_05": "hazmat/defeat_05.png", "hazmat/defeat_06": "hazmat/defeat_06.png", "hazmat/hit_01": "hazmat/hit_01.png", "hazmat/hit_02": "hazmat/hit_02.png", "hazmat/hit_03": "hazmat/hit_03.png", "hazmat/idle_01": "hazmat/idle_01.png", "hazmat/idle_02": "hazmat/idle_02.png", "hazmat/idle_03": "hazmat/idle_03.png", "hazmat/idle_04": "hazmat/idle_04.png", "hazmat/throw_polluted_water_trash_01": "hazmat/throw_polluted_water_trash_01.png", "hazmat/throw_polluted_water_trash_02": "hazmat/throw_polluted_water_trash_02.png", "hazmat/throw_polluted_water_trash_03": "hazmat/throw_polluted_water_trash_03.png", "hazmat/throw_polluted_water_trash_04": "hazmat/throw_polluted_water_trash_04.png", "hazmat/throw_polluted_water_trash_05": "hazmat/throw_polluted_water_trash_05.png", "hazmat/throw_polluted_water_trash_06": "hazmat/throw_polluted_water_trash_06.png", "hazmat/throw_polluted_water_trash_07": "hazmat/throw_polluted_water_trash_07.png", "hazmat/walk_01": "hazmat/walk_01.png", "hazmat/walk_02": "hazmat/walk_02.png", "hazmat/walk_03": "hazmat/walk_03.png", "hazmat/walk_04": "hazmat/walk_04.png", "hazmat/walk_05": "hazmat/walk_05.png", "hazmat/walk_06": "hazmat/walk_06.png", "hazmat/walk_07": "hazmat/walk_07.png", "hud/corazon_lleno": "hud/corazon_lleno.png", "hud/corazon_vacio": "hud/corazon_vacio.png", "intro/title": "intro/title.jpg", "jefe_mascara/attack_01": "jefe_mascara/attack_01.png", "jefe_mascara/attack_02": "jefe_mascara/attack_02.png", "jefe_mascara/attack_03": "jefe_mascara/attack_03.png", "jefe_mascara/attack_04": "jefe_mascara/attack_04.png", "jefe_mascara/attack_05": "jefe_mascara/attack_05.png", "jefe_mascara/attack_06": "jefe_mascara/attack_06.png", "jefe_mascara/attack_07": "jefe_mascara/attack_07.png", "jefe_mascara/attack_08": "jefe_mascara/attack_08.png", "jefe_mascara/defeat_01": "jefe_mascara/defeat_01.png", "jefe_mascara/defeat_02": "jefe_mascara/defeat_02.png", "jefe_mascara/defeat_03": "jefe_mascara/defeat_03.png", "jefe_mascara/defeat_04": "jefe_mascara/defeat_04.png", "jefe_mascara/hit_01": "jefe_mascara/hit_01.png", "jefe_mascara/hit_02": "jefe_mascara/hit_02.png", "jefe_mascara/hit_03": "jefe_mascara/hit_03.png", "jefe_mascara/hit_04": "jefe_mascara/hit_04.png", "jefe_mascara/hit_05": "jefe_mascara/hit_05.png", "jefe_mascara/idle_01": "jefe_mascara/idle_01.png", "jefe_mascara/idle_02": "jefe_mascara/idle_02.png", "jefe_mascara/idle_03": "jefe_mascara/idle_03.png", "jefe_mascara/idle_04": "jefe_mascara/idle_04.png", "jefe_mascara/mask_break_01": "jefe_mascara/mask_break_01.png", "jefe_mascara/mask_break_02": "jefe_mascara/mask_break_02.png", "jefe_mascara/mask_break_03": "jefe_mascara/mask_break_03.png", "jefe_mascara/mask_break_04": "jefe_mascara/mask_break_04.png", "jefe_mascara/mask_break_05": "jefe_mascara/mask_break_05.png", "jefe_mascara/mask_break_06": "jefe_mascara/mask_break_06.png", "jefe_mascara/mask_break_07": "jefe_mascara/mask_break_07.png", "jefe_mascara/mask_break_08": "jefe_mascara/mask_break_08.png", "jefe_mascara/walk_01": "jefe_mascara/walk_01.png", "jefe_mascara/walk_02": "jefe_mascara/walk_02.png", "jefe_mascara/walk_03": "jefe_mascara/walk_03.png", "jefe_mascara/walk_04": "jefe_mascara/walk_04.png", "jefe_mascara/walk_05": "jefe_mascara/walk_05.png", "jefe_mascara/walk_06": "jefe_mascara/walk_06.png", "jefe_sin_mascara/attack_01": "jefe_sin_mascara/attack_01.png", "jefe_sin_mascara/attack_02": "jefe_sin_mascara/attack_02.png", "jefe_sin_mascara/attack_03": "jefe_sin_mascara/attack_03.png", "jefe_sin_mascara/attack_04": "jefe_sin_mascara/attack_04.png", "jefe_sin_mascara/attack_05": "jefe_sin_mascara/attack_05.png", "jefe_sin_mascara/attack_06": "jefe_sin_mascara/attack_06.png", "jefe_sin_mascara/attack_07": "jefe_sin_mascara/attack_07.png", "jefe_sin_mascara/attack_08": "jefe_sin_mascara/attack_08.png", "jefe_sin_mascara/cry_01": "jefe_sin_mascara/cry_01.png", "jefe_sin_mascara/cry_02": "jefe_sin_mascara/cry_02.png", "jefe_sin_mascara/cry_03": "jefe_sin_mascara/cry_03.png", "jefe_sin_mascara/cry_04": "jefe_sin_mascara/cry_04.png", "jefe_sin_mascara/cry_05": "jefe_sin_mascara/cry_05.png", "jefe_sin_mascara/cry_06": "jefe_sin_mascara/cry_06.png", "jefe_sin_mascara/cry_07": "jefe_sin_mascara/cry_07.png", "jefe_sin_mascara/cry_08": "jefe_sin_mascara/cry_08.png", "jefe_sin_mascara/defeat_01": "jefe_sin_mascara/defeat_01.png", "jefe_sin_mascara/defeat_02": "jefe_sin_mascara/defeat_02.png", "jefe_sin_mascara/defeat_03": "jefe_sin_mascara/defeat_03.png", "jefe_sin_mascara/defeat_04": "jefe_sin_mascara/defeat_04.png", "jefe_sin_mascara/hit_01": "jefe_sin_mascara/hit_01.png", "jefe_sin_mascara/hit_02": "jefe_sin_mascara/hit_02.png", "jefe_sin_mascara/hit_03": "jefe_sin_mascara/hit_03.png", "jefe_sin_mascara/hit_04": "jefe_sin_mascara/hit_04.png", "jefe_sin_mascara/hit_05": "jefe_sin_mascara/hit_05.png", "jefe_sin_mascara/idle_01": "jefe_sin_mascara/idle_01.png", "jefe_sin_mascara/idle_02": "jefe_sin_mascara/idle_02.png", "jefe_sin_mascara/idle_03": "jefe_sin_mascara/idle_03.png", "jefe_sin_mascara/idle_04": "jefe_sin_mascara/idle_04.png", "jefe_sin_mascara/walk_01": "jefe_sin_mascara/walk_01.png", "jefe_sin_mascara/walk_02": "jefe_sin_mascara/walk_02.png", "jefe_sin_mascara/walk_03": "jefe_sin_mascara/walk_03.png", "jefe_sin_mascara/walk_04": "jefe_sin_mascara/walk_04.png", "jefe_sin_mascara/walk_05": "jefe_sin_mascara/walk_05.png", "jefe_sin_mascara/walk_06": "jefe_sin_mascara/walk_06.png", "monstruo/ataque_especial_01": "monstruo/ataque_especial_01.png", "monstruo/ataque_especial_02": "monstruo/ataque_especial_02.png", "monstruo/ataque_especial_03": "monstruo/ataque_especial_03.png", "monstruo/ataque_especial_04": "monstruo/ataque_especial_04.png", "monstruo/ataque_especial_05": "monstruo/ataque_especial_05.png", "monstruo/ataque_especial_06": "monstruo/ataque_especial_06.png", "monstruo/ataque_especial_07": "monstruo/ataque_especial_07.png", "monstruo/ataque_especial_08": "monstruo/ataque_especial_08.png", "monstruo/caminando_01": "monstruo/caminando_01.png", "monstruo/caminando_02": "monstruo/caminando_02.png", "monstruo/caminando_03": "monstruo/caminando_03.png", "monstruo/caminando_04": "monstruo/caminando_04.png", "monstruo/caminando_05": "monstruo/caminando_05.png", "monstruo/caminando_06": "monstruo/caminando_06.png", "monstruo/caminando_07": "monstruo/caminando_07.png", "monstruo/caminando_08": "monstruo/caminando_08.png", "monstruo/caminando_09": "monstruo/caminando_09.png", "monstruo/caminando_10": "monstruo/caminando_10.png", "monstruo/caminando_11": "monstruo/caminando_11.png", "monstruo/caminando_12": "monstruo/caminando_12.png", "monstruo/carga_basura_01": "monstruo/carga_basura_01.png", "monstruo/carga_basura_02": "monstruo/carga_basura_02.png", "monstruo/carga_basura_03": "monstruo/carga_basura_03.png", "monstruo/carga_basura_04": "monstruo/carga_basura_04.png", "monstruo/carga_basura_05": "monstruo/carga_basura_05.png", "monstruo/carga_basura_06": "monstruo/carga_basura_06.png", "monstruo/carga_basura_07": "monstruo/carga_basura_07.png", "monstruo/carga_basura_08": "monstruo/carga_basura_08.png", "monstruo/carga_basura_09": "monstruo/carga_basura_09.png", "monstruo/corriendo_02": "monstruo/corriendo_02.png", "monstruo/corriendo_03": "monstruo/corriendo_03.png", "monstruo/corriendo_04": "monstruo/corriendo_04.png", "monstruo/corriendo_05": "monstruo/corriendo_05.png", "monstruo/corriendo_06": "monstruo/corriendo_06.png", "monstruo/corriendo_07": "monstruo/corriendo_07.png", "monstruo/corriendo_08": "monstruo/corriendo_08.png", "monstruo/corriendo_09": "monstruo/corriendo_09.png", "monstruo/defensa_tapa_01": "monstruo/defensa_tapa_01.png", "monstruo/defensa_tapa_02": "monstruo/defensa_tapa_02.png", "monstruo/defensa_tapa_03": "monstruo/defensa_tapa_03.png", "monstruo/defensa_tapa_04": "monstruo/defensa_tapa_04.png", "monstruo/defensa_tapa_05": "monstruo/defensa_tapa_05.png", "monstruo/defensa_tapa_06": "monstruo/defensa_tapa_06.png", "monstruo/defensa_tapa_07": "monstruo/defensa_tapa_07.png", "monstruo/defensa_tapa_08": "monstruo/defensa_tapa_08.png", "monstruo/defensa_tapa_09": "monstruo/defensa_tapa_09.png", "monstruo/defensa_tapa_10": "monstruo/defensa_tapa_10.png", "monstruo/lanzamiento_03": "monstruo/lanzamiento_03.png", "monstruo/lanzamiento_04": "monstruo/lanzamiento_04.png", "monstruo/lanzamiento_05": "monstruo/lanzamiento_05.png", "monstruo/lanzamiento_06": "monstruo/lanzamiento_06.png", "monstruo/reposo_01": "monstruo/reposo_01.png", "monstruo/reposo_02": "monstruo/reposo_02.png", "monstruo/reposo_03": "monstruo/reposo_03.png", "monstruo/reposo_04": "monstruo/reposo_04.png", "monstruo/reposo_05": "monstruo/reposo_05.png", "monstruo/reposo_06": "monstruo/reposo_06.png", "monstruo/reposo_07": "monstruo/reposo_07.png", "monstruo/reposo_08": "monstruo/reposo_08.png", "monstruo/reposo_09": "monstruo/reposo_09.png", "nivel/pozo": "nivel/pozo.png", "nivel/gota": "nivel/gota.png", "nivel/gota_hud": "nivel/gota_hud.png", "nivel/basura_toxica": "nivel/basura_toxica.png", "nivel/retrato_aqua": "nivel/retrato_aqua.png", "nivel/retrato_yani": "nivel/retrato_yani.png", "nivel/retrato_corvo": "nivel/retrato_corvo.png", "nivel/plataforma": "nivel/plataforma.png", "nivel/plataforma_corta": "nivel/plataforma_corta.png", "nivel/plataforma_larga": "nivel/plataforma_larga.png", "nivel/plataforma_b": "nivel/plataforma_b.png", "nivel/plataforma_c": "nivel/plataforma_c.png", "nivel/plataforma_d": "nivel/plataforma_d.png", "nivel/plataforma_e": "nivel/plataforma_e.png", "nivel/puas": "nivel/puas.png", "nivel/puas_b": "nivel/puas_b.png", "nivel/puas_techo": "nivel/puas_techo.png", "nivel/bomba": "nivel/bomba.png", "nivel/toxico": "nivel/toxico.png", "nivel/bote": "nivel/bote.png", "nivel/charco_toxico": "nivel/charco_toxico.png", "nivel/senaletica": "nivel/senaletica.png", "nivel/llanta": "nivel/llanta.png", "nivel/cubo": "nivel/cubo.png", "nivel/humo": "nivel/humo.png", "nivel/caja_fuerte": "nivel/caja_fuerte.png", "nivel/fuente": "nivel/fuente.png", "nivel/fuente_b": "nivel/fuente_b.png", "nivel/fondo_toxico": "nivel/fondo_toxico.png", "nivel/fondo_paisaje": "nivel/fondo_paisaje.png", "nivel/fondo_fabrica": "nivel/fondo_fabrica.png", "nivel/rio_toxico": "nivel/rio_toxico.png", "nivel/bandera_meta": "nivel/bandera_meta.png", "nivel/burbujas": "nivel/burbujas.png", "nivel/retrato_jefe": "nivel/retrato_jefe.png", "nivel/retrato_padre": "nivel/retrato_padre.png", "nivel1/alga_a": "nivel1/alga_a.png", "nivel1/alga_b": "nivel1/alga_b.png", "nivel1/alga_c": "nivel1/alga_c.png", "nivel1/andamio_a": "nivel1/andamio_a.png", "nivel1/andamio_b": "nivel1/andamio_b.png", "nivel1/caja_a": "nivel1/caja_a.png", "nivel1/caja_b": "nivel1/caja_b.png", "nivel1/cerca": "nivel1/cerca.png", "nivel1/llanta_rama": "nivel1/llanta_rama.png", "nivel1/mata_der": "nivel1/mata_der.png", "nivel1/mata_izq": "nivel1/mata_izq.png", "nivel1/piedra": "nivel1/piedra.png", "nivel1/pinchos_caja": "nivel1/pinchos_caja.png", "nivel1/pinchos_chicos": "nivel1/pinchos_chicos.png", "nivel1/puente_a": "nivel1/puente_a.png", "nivel1/puente_b": "nivel1/puente_b.png", "nivel1/reciclaje_a": "nivel1/reciclaje_a.png", "nivel1/reciclaje_b": "nivel1/reciclaje_b.png", "nivel1/tronco_a": "nivel1/tronco_a.png", "nivel1/tronco_b": "nivel1/tronco_b.png", "nivel1/fondo": "nivel1/fondo.png", "nivel3/andamio_inestable": "nivel3/andamio_inestable.png", "nivel3/andamio_plataforma_madera": "nivel3/andamio_plataforma_madera.png", "nivel3/andamio_plataforma_rota": "nivel3/andamio_plataforma_rota.png", "nivel3/andamio_torre": "nivel3/andamio_torre.png", "nivel3/barandal_derrumbado": "nivel3/barandal_derrumbado.png", "nivel3/barrera_concreto": "nivel3/barrera_concreto.png", "nivel3/barrera_concreto_rayada": "nivel3/barrera_concreto_rayada.png", "nivel3/barriles_apilados": "nivel3/barriles_apilados.png", "nivel3/barriles_apilados_derramando_acido": "nivel3/barriles_apilados_derramando_acido.png", "nivel3/barriles_y_cajas": "nivel3/barriles_y_cajas.png", "nivel3/barril_con_tubo_en_llamas": "nivel3/barril_con_tubo_en_llamas.png", "nivel3/barril_oxidado": "nivel3/barril_oxidado.png", "nivel3/barril_oxidado_en_llamas": "nivel3/barril_oxidado_en_llamas.png", "nivel3/barril_oxidado_fuga_acido": "nivel3/barril_oxidado_fuga_acido.png", "nivel3/barril_rodando_derrame_toxico": "nivel3/barril_rodando_derrame_toxico.png", "nivel3/barril_verde_contaminado": "nivel3/barril_verde_contaminado.png", "nivel3/barril_verde_derrame_acido": "nivel3/barril_verde_derrame_acido.png", "nivel3/barril_verde_en_llamas": "nivel3/barril_verde_en_llamas.png", "nivel3/barril_volcado_derrame_toxico": "nivel3/barril_volcado_derrame_toxico.png", "nivel3/barril_y_barril_volcado_derramando": "nivel3/barril_y_barril_volcado_derramando.png", "nivel3/barril_y_barril_volcado_derramando_02": "nivel3/barril_y_barril_volcado_derramando_02.png", "nivel3/botella_agua_chica": "nivel3/botella_agua_chica.png", "nivel3/botella_agua_mediana": "nivel3/botella_agua_mediana.png", "nivel3/cables_pelados_enredados_chispas": "nivel3/cables_pelados_enredados_chispas.png", "nivel3/cable_electrico_cortado_chispas": "nivel3/cable_electrico_cortado_chispas.png", "nivel3/cajas_madera_y_caja_h2o": "nivel3/cajas_madera_y_caja_h2o.png", "nivel3/charco_agua_contaminada": "nivel3/charco_agua_contaminada.png", "nivel3/charco_agua_toxica_vapores": "nivel3/charco_agua_toxica_vapores.png", "nivel3/charco_contaminado": "nivel3/charco_contaminado.png", "nivel3/charco_contaminado_mediano": "nivel3/charco_contaminado_mediano.png", "nivel3/charco_electrificado": "nivel3/charco_electrificado.png", "nivel3/charco_lodo_grande": "nivel3/charco_lodo_grande.png", "nivel3/charco_lodo_toxico_vapores": "nivel3/charco_lodo_toxico_vapores.png", "nivel3/conos_trafico": "nivel3/conos_trafico.png", "nivel3/escalera_metal": "nivel3/escalera_metal.png", "nivel3/escombro_con_estacas": "nivel3/escombro_con_estacas.png", "nivel3/escombro_piedras": "nivel3/escombro_piedras.png", "nivel3/escombro_varillas_puntiagudas": "nivel3/escombro_varillas_puntiagudas.png", "nivel3/garrafon_h2o_chico": "nivel3/garrafon_h2o_chico.png", "nivel3/garrafon_h2o_grande": "nivel3/garrafon_h2o_grande.png", "nivel3/garrafon_h2o_mediano": "nivel3/garrafon_h2o_mediano.png", "nivel3/generador_electrico": "nivel3/generador_electrico.png", "nivel3/letrero_agua_contaminada": "nivel3/letrero_agua_contaminada.png", "nivel3/letrero_caido_cable_electrico": "nivel3/letrero_caido_cable_electrico.png", "nivel3/letrero_h2o_company": "nivel3/letrero_h2o_company.png", "nivel3/letrero_obra_flecha": "nivel3/letrero_obra_flecha.png", "nivel3/llantas_apiladas": "nivel3/llantas_apiladas.png", "nivel3/llantas_y_escombro_con_charco": "nivel3/llantas_y_escombro_con_charco.png", "nivel3/malla_metal_rota": "nivel3/malla_metal_rota.png", "nivel3/panorama": "nivel3/panorama.png", "nivel3/pasarela_metal_barandal": "nivel3/pasarela_metal_barandal.png", "nivel3/pasarela_metal_barandal_roto": "nivel3/pasarela_metal_barandal_roto.png", "nivel3/piedras_sueltas": "nivel3/piedras_sueltas.png", "nivel3/pila_cajas_barril_llantas": "nivel3/pila_cajas_barril_llantas.png", "nivel3/pila_escombro_negro": "nivel3/pila_escombro_negro.png", "nivel3/pila_llantas_basura": "nivel3/pila_llantas_basura.png", "nivel3/plataforma_rejilla_metal": "nivel3/plataforma_rejilla_metal.png", "nivel3/plataforma_rejilla_metal_doble": "nivel3/plataforma_rejilla_metal_doble.png", "nivel3/rampa_metal": "nivel3/rampa_metal.png", "nivel3/rampa_metal_baja": "nivel3/rampa_metal_baja.png", "nivel3/roca": "nivel3/roca.png", "nivel3/senal_advertencia_triangulo": "nivel3/senal_advertencia_triangulo.png", "nivel3/senal_hombres_trabajando": "nivel3/senal_hombres_trabajando.png", "nivel3/tableros_electricos_corto_circuito": "nivel3/tableros_electricos_corto_circuito.png", "nivel3/tubo_codo_derrame_toxico_01": "nivel3/tubo_codo_derrame_toxico_01.png", "nivel3/tubo_codo_derrame_toxico_02": "nivel3/tubo_codo_derrame_toxico_02.png", "nivel3/tubo_codo_goteando_agua_toxica": "nivel3/tubo_codo_goteando_agua_toxica.png", "nivel3/tubo_fuga_agua_contaminada": "nivel3/tubo_fuga_agua_contaminada.png", "nivel3/tubo_fuga_vapor_caliente": "nivel3/tubo_fuga_vapor_caliente.png", "nivel3/tubo_roto_derrame_toxico": "nivel3/tubo_roto_derrame_toxico.png", "nivel3/tubo_roto_en_llamas": "nivel3/tubo_roto_en_llamas.png", "nivel3/tubo_vertiendo_agua_toxica_01": "nivel3/tubo_vertiendo_agua_toxica_01.png", "nivel3/tubo_vertiendo_agua_toxica_02": "nivel3/tubo_vertiendo_agua_toxica_02.png", "nivel3/valla_alambre_de_puas": "nivel3/valla_alambre_de_puas.png", "nivel3/valla_malla_metal": "nivel3/valla_malla_metal.png", "nivel3/valla_metal": "nivel3/valla_metal.png", "nivel3/varillas_y_escombro": "nivel3/varillas_y_escombro.png", "nivel3/ventilador_industrial_01": "nivel3/ventilador_industrial_01.png", "nivel3/ventilador_industrial_02": "nivel3/ventilador_industrial_02.png", "nivel3/vidrios_rotos_y_varillas": "nivel3/vidrios_rotos_y_varillas.png", "nivel3/viga_caida_con_escombros": "nivel3/viga_caida_con_escombros.png", "nivel3/viga_cayendo_sobre_andamio": "nivel3/viga_cayendo_sobre_andamio.png", "nivel3/viga_horizontal_delgada": "nivel3/viga_horizontal_delgada.png", "nivel3/viga_metal_bloque": "nivel3/viga_metal_bloque.png", "nivel3/viga_metal_larga": "nivel3/viga_metal_larga.png", "nivel3/viga_metal_larga_02": "nivel3/viga_metal_larga_02.png", "nivel3/viga_metal_mediana": "nivel3/viga_metal_mediana.png", "nivel3/viga_metal_oxidada": "nivel3/viga_metal_oxidada.png", "nivel3/viga_vertical_01": "nivel3/viga_vertical_01.png", "nivel3/viga_vertical_02": "nivel3/viga_vertical_02.png", "nivel3/viga_vertical_alta": "nivel3/viga_vertical_alta.png", "policia/defeat_01": "policia/defeat_01.png", "policia/defeat_02": "policia/defeat_02.png", "policia/defeat_03": "policia/defeat_03.png", "policia/defeat_04": "policia/defeat_04.png", "policia/hit_01": "policia/hit_01.png", "policia/hit_02": "policia/hit_02.png", "policia/hit_03": "policia/hit_03.png", "policia/idle_01": "policia/idle_01.png", "policia/idle_02": "policia/idle_02.png", "policia/idle_03": "policia/idle_03.png", "policia/idle_04": "policia/idle_04.png", "policia/throw_01": "policia/throw_01.png", "policia/throw_02": "policia/throw_02.png", "policia/throw_03": "policia/throw_03.png", "policia/throw_04": "policia/throw_04.png", "policia/throw_05": "policia/throw_05.png", "policia/throw_06": "policia/throw_06.png", "policia/throw_07": "policia/throw_07.png", "policia/throw_08": "policia/throw_08.png", "policia/throw_09": "policia/throw_09.png", "policia/walk_01": "policia/walk_01.png", "policia/walk_02": "policia/walk_02.png", "policia/walk_03": "policia/walk_03.png", "policia/walk_04": "policia/walk_04.png", "policia/walk_05": "policia/walk_05.png", "policia/walk_06": "policia/walk_06.png", "policia/walk_07": "policia/walk_07.png", "robot/defeat_01": "robot/defeat_01.png", "robot/defeat_02": "robot/defeat_02.png", "robot/defeat_03": "robot/defeat_03.png", "robot/defeat_04": "robot/defeat_04.png", "robot/defeat_05": "robot/defeat_05.png", "robot/hit_01": "robot/hit_01.png", "robot/hit_02": "robot/hit_02.png", "robot/hit_03": "robot/hit_03.png", "robot/hit_04": "robot/hit_04.png", "robot/idle_01": "robot/idle_01.png", "robot/idle_02": "robot/idle_02.png", "robot/idle_03": "robot/idle_03.png", "robot/move_01": "robot/move_01.png", "robot/move_02": "robot/move_02.png", "robot/move_03": "robot/move_03.png", "robot/move_04": "robot/move_04.png", "robot/move_05": "robot/move_05.png", "robot/move_06": "robot/move_06.png", "robot/spraying_01": "robot/spraying_01.png", "robot/spraying_02": "robot/spraying_02.png", "robot/spraying_03": "robot/spraying_03.png", "robot/spraying_04": "robot/spraying_04.png", "robot/spraying_05": "robot/spraying_05.png", "yani/agachado_01": "yani/agachado_01.png", "yani/agachado_02": "yani/agachado_02.png", "yani/agachado_03": "yani/agachado_03.png", "yani/agachado_04": "yani/agachado_04.png", "yani/agachado_05": "yani/agachado_05.png", "yani/botella_meta_01": "yani/botella_meta_01.png", "yani/botella_meta_02": "yani/botella_meta_02.png", "yani/botella_meta_03": "yani/botella_meta_03.png", "yani/botella_meta_objeto_01": "yani/botella_meta_objeto_01.png", "yani/caminando_01": "yani/caminando_01.png", "yani/caminando_02": "yani/caminando_02.png", "yani/caminando_03": "yani/caminando_03.png", "yani/caminando_04": "yani/caminando_04.png", "yani/caminando_05": "yani/caminando_05.png", "yani/caminando_06": "yani/caminando_06.png", "yani/caminando_07": "yani/caminando_07.png", "yani/caminando_08": "yani/caminando_08.png", "yani/caminando_09": "yani/caminando_09.png", "yani/corriendo_01": "yani/corriendo_01.png", "yani/corriendo_02": "yani/corriendo_02.png", "yani/corriendo_03": "yani/corriendo_03.png", "yani/corriendo_04": "yani/corriendo_04.png", "yani/corriendo_05": "yani/corriendo_05.png", "yani/corriendo_06": "yani/corriendo_06.png", "yani/corriendo_07": "yani/corriendo_07.png", "yani/corriendo_08": "yani/corriendo_08.png", "yani/disparando_01": "yani/disparando_01.png", "yani/disparando_02": "yani/disparando_02.png", "yani/disparando_proyectil_01": "yani/disparando_proyectil_01.png", "yani/disparando_proyectil_02": "yani/disparando_proyectil_02.png", "yani/disparando_proyectil_03": "yani/disparando_proyectil_03.png", "yani/disparando_proyectil_04": "yani/disparando_proyectil_04.png", "yani/disparando_proyectil_05": "yani/disparando_proyectil_05.png", "yani/idle_01": "yani/idle_01.png", "yani/idle_02": "yani/idle_02.png", "yani/idle_03": "yani/idle_03.png", "yani/idle_04": "yani/idle_04.png", "yani/idle_05": "yani/idle_05.png", "yani/idle_06": "yani/idle_06.png", "yani/idle_07": "yani/idle_07.png", "yani/idle_08": "yani/idle_08.png", "yani/muerte_derrota_01": "yani/muerte_derrota_01.png", "yani/muerte_derrota_02": "yani/muerte_derrota_02.png", "yani/muerte_derrota_03": "yani/muerte_derrota_03.png", "yani/reaccion_impacto_01": "yani/reaccion_impacto_01.png", "yani/reaccion_impacto_02": "yani/reaccion_impacto_02.png", "yani/reaccion_impacto_03": "yani/reaccion_impacto_03.png", "yani/reaccion_impacto_04": "yani/reaccion_impacto_04.png", "yani/recolectando_gota_01": "yani/recolectando_gota_01.png", "yani/recolectando_gota_02": "yani/recolectando_gota_02.png", "yani/recolectando_gota_03": "yani/recolectando_gota_03.png", "yani/saltando_01": "yani/saltando_01.png", "yani/saltando_02": "yani/saltando_02.png", "yani/saltando_03": "yani/saltando_03.png", "yani/saltando_04": "yani/saltando_04.png", "yani/saltando_05": "yani/saltando_05.png", "yani/saltando_06": "yani/saltando_06.png"};
+const MANIFEST = {"aqua/agachado_01": "aqua/agachado_01.png", "aqua/agachado_02": "aqua/agachado_02.png", "aqua/agachado_03": "aqua/agachado_03.png", "aqua/agachado_04": "aqua/agachado_04.png", "aqua/agachado_05": "aqua/agachado_05.png", "aqua/caminando_01": "aqua/caminando_01.png", "aqua/caminando_02": "aqua/caminando_02.png", "aqua/caminando_03": "aqua/caminando_03.png", "aqua/caminando_04": "aqua/caminando_04.png", "aqua/caminando_05": "aqua/caminando_05.png", "aqua/caminando_06": "aqua/caminando_06.png", "aqua/caminando_07": "aqua/caminando_07.png", "aqua/corriendo_02": "aqua/corriendo_02.png", "aqua/corriendo_03": "aqua/corriendo_03.png", "aqua/corriendo_04": "aqua/corriendo_04.png", "aqua/corriendo_05": "aqua/corriendo_05.png", "aqua/corriendo_06": "aqua/corriendo_06.png", "aqua/corriendo_07": "aqua/corriendo_07.png", "aqua/disparando_bolas_01": "aqua/disparando_bolas_01.png", "aqua/disparando_bolas_02": "aqua/disparando_bolas_02.png", "aqua/disparando_bolas_03": "aqua/disparando_bolas_03.png", "aqua/disparando_bolas_04": "aqua/disparando_bolas_04.png", "aqua/idle_quieto_01": "aqua/idle_quieto_01.png", "aqua/idle_quieto_02": "aqua/idle_quieto_02.png", "aqua/idle_quieto_03": "aqua/idle_quieto_03.png", "aqua/idle_quieto_04": "aqua/idle_quieto_04.png", "aqua/idle_quieto_05": "aqua/idle_quieto_05.png", "aqua/idle_quieto_06": "aqua/idle_quieto_06.png", "aqua/proyectiles_bola_cabello_01": "aqua/proyectiles_bola_cabello_01.png", "aqua/proyectiles_bola_cabello_02": "aqua/proyectiles_bola_cabello_02.png", "aqua/proyectiles_bola_cabello_03": "aqua/proyectiles_bola_cabello_03.png", "aqua/proyectiles_bola_cabello_04": "aqua/proyectiles_bola_cabello_04.png", "aqua/proyectiles_bola_cabello_05": "aqua/proyectiles_bola_cabello_05.png", "aqua/proyectiles_bola_cabello_06": "aqua/proyectiles_bola_cabello_06.png", "aqua/proyectiles_bola_cabello_07": "aqua/proyectiles_bola_cabello_07.png", "aqua/proyectiles_bola_cabello_08": "aqua/proyectiles_bola_cabello_08.png", "aqua/proyectiles_bola_cabello_09": "aqua/proyectiles_bola_cabello_09.png", "aqua/proyectiles_bola_cabello_10": "aqua/proyectiles_bola_cabello_10.png", "aqua/proyectiles_bola_cabello_11": "aqua/proyectiles_bola_cabello_11.png", "aqua/proyectiles_bola_cabello_12": "aqua/proyectiles_bola_cabello_12.png", "aqua/proyectiles_bola_cabello_13": "aqua/proyectiles_bola_cabello_13.png", "aqua/proyectiles_bola_cabello_14": "aqua/proyectiles_bola_cabello_14.png", "aqua/reaccion_impacto_02": "aqua/reaccion_impacto_02.png", "aqua/reaccion_impacto_03": "aqua/reaccion_impacto_03.png", "aqua/reaccion_impacto_04": "aqua/reaccion_impacto_04.png", "aqua/reaccion_impacto_05": "aqua/reaccion_impacto_05.png", "aqua/reaccion_impacto_06": "aqua/reaccion_impacto_06.png", "aqua/reaccion_impacto_07": "aqua/reaccion_impacto_07.png", "aqua/reaccion_impacto_08": "aqua/reaccion_impacto_08.png", "aqua/reaccion_impacto_09": "aqua/reaccion_impacto_09.png", "aqua/reaccion_impacto_10": "aqua/reaccion_impacto_10.png", "aqua/reaccion_impacto_11": "aqua/reaccion_impacto_11.png", "aqua/salto_02": "aqua/salto_02.png", "aqua/salto_03": "aqua/salto_03.png", "aqua/salto_04": "aqua/salto_04.png", "aqua/salto_05": "aqua/salto_05.png", "aqua/salto_06": "aqua/salto_06.png", "corvo/defeat_01": "corvo/defeat_01.png", "corvo/defeat_02": "corvo/defeat_02.png", "corvo/defeat_03": "corvo/defeat_03.png", "corvo/defeat_04": "corvo/defeat_04.png", "corvo/defeat_05": "corvo/defeat_05.png", "corvo/flap_01": "corvo/flap_01.png", "corvo/flap_02": "corvo/flap_02.png", "corvo/flap_03": "corvo/flap_03.png", "corvo/flap_04": "corvo/flap_04.png", "corvo/flap_05": "corvo/flap_05.png", "corvo/flap_06": "corvo/flap_06.png", "corvo/flap_07": "corvo/flap_07.png", "corvo/hit_01": "corvo/hit_01.png", "corvo/hit_02": "corvo/hit_02.png", "corvo/hit_03": "corvo/hit_03.png", "corvo/hit_04": "corvo/hit_04.png", "corvo/hit_05": "corvo/hit_05.png", "corvo/idle_01": "corvo/idle_01.png", "corvo/idle_02": "corvo/idle_02.png", "corvo/idle_03": "corvo/idle_03.png", "corvo/idle_04": "corvo/idle_04.png", "corvo/idle_05": "corvo/idle_05.png", "corvo/idle_06": "corvo/idle_06.png", "corvo/idle_07": "corvo/idle_07.png", "corvo/idle_08": "corvo/idle_08.png", "corvo/move_01": "corvo/move_01.png", "corvo/move_02": "corvo/move_02.png", "corvo/move_03": "corvo/move_03.png", "corvo/move_04": "corvo/move_04.png", "corvo/move_05": "corvo/move_05.png", "corvo/move_06": "corvo/move_06.png", "corvo/move_07": "corvo/move_07.png", "corvo/move_08": "corvo/move_08.png", "corvo/wing_attack_01": "corvo/wing_attack_01.png", "corvo/wing_attack_02": "corvo/wing_attack_02.png", "corvo/wing_attack_03": "corvo/wing_attack_03.png", "corvo/wing_attack_04": "corvo/wing_attack_04.png", "corvo/wing_attack_05": "corvo/wing_attack_05.png", "corvo/wing_attack_06": "corvo/wing_attack_06.png", "corvo/wing_attack_07": "corvo/wing_attack_07.png", "hazmat/defeat_01": "hazmat/defeat_01.png", "hazmat/defeat_02": "hazmat/defeat_02.png", "hazmat/defeat_03": "hazmat/defeat_03.png", "hazmat/defeat_04": "hazmat/defeat_04.png", "hazmat/defeat_05": "hazmat/defeat_05.png", "hazmat/defeat_06": "hazmat/defeat_06.png", "hazmat/hit_01": "hazmat/hit_01.png", "hazmat/hit_02": "hazmat/hit_02.png", "hazmat/hit_03": "hazmat/hit_03.png", "hazmat/idle_01": "hazmat/idle_01.png", "hazmat/idle_02": "hazmat/idle_02.png", "hazmat/idle_03": "hazmat/idle_03.png", "hazmat/idle_04": "hazmat/idle_04.png", "hazmat/throw_polluted_water_trash_01": "hazmat/throw_polluted_water_trash_01.png", "hazmat/throw_polluted_water_trash_02": "hazmat/throw_polluted_water_trash_02.png", "hazmat/throw_polluted_water_trash_03": "hazmat/throw_polluted_water_trash_03.png", "hazmat/throw_polluted_water_trash_04": "hazmat/throw_polluted_water_trash_04.png", "hazmat/throw_polluted_water_trash_05": "hazmat/throw_polluted_water_trash_05.png", "hazmat/throw_polluted_water_trash_06": "hazmat/throw_polluted_water_trash_06.png", "hazmat/throw_polluted_water_trash_07": "hazmat/throw_polluted_water_trash_07.png", "hazmat/walk_01": "hazmat/walk_01.png", "hazmat/walk_02": "hazmat/walk_02.png", "hazmat/walk_03": "hazmat/walk_03.png", "hazmat/walk_04": "hazmat/walk_04.png", "hazmat/walk_05": "hazmat/walk_05.png", "hazmat/walk_06": "hazmat/walk_06.png", "hazmat/walk_07": "hazmat/walk_07.png", "hud/corazon_lleno": "hud/corazon_lleno.png", "hud/corazon_vacio": "hud/corazon_vacio.png", "intro/title": "intro/title.jpg", "jefe_mascara/attack_01": "jefe_mascara/attack_01.png", "jefe_mascara/attack_02": "jefe_mascara/attack_02.png", "jefe_mascara/attack_03": "jefe_mascara/attack_03.png", "jefe_mascara/attack_04": "jefe_mascara/attack_04.png", "jefe_mascara/attack_05": "jefe_mascara/attack_05.png", "jefe_mascara/attack_06": "jefe_mascara/attack_06.png", "jefe_mascara/attack_07": "jefe_mascara/attack_07.png", "jefe_mascara/attack_08": "jefe_mascara/attack_08.png", "jefe_mascara/defeat_01": "jefe_mascara/defeat_01.png", "jefe_mascara/defeat_02": "jefe_mascara/defeat_02.png", "jefe_mascara/defeat_03": "jefe_mascara/defeat_03.png", "jefe_mascara/defeat_04": "jefe_mascara/defeat_04.png", "jefe_mascara/hit_01": "jefe_mascara/hit_01.png", "jefe_mascara/hit_02": "jefe_mascara/hit_02.png", "jefe_mascara/hit_03": "jefe_mascara/hit_03.png", "jefe_mascara/hit_04": "jefe_mascara/hit_04.png", "jefe_mascara/hit_05": "jefe_mascara/hit_05.png", "jefe_mascara/idle_01": "jefe_mascara/idle_01.png", "jefe_mascara/idle_02": "jefe_mascara/idle_02.png", "jefe_mascara/idle_03": "jefe_mascara/idle_03.png", "jefe_mascara/idle_04": "jefe_mascara/idle_04.png", "jefe_mascara/mask_break_01": "jefe_mascara/mask_break_01.png", "jefe_mascara/mask_break_02": "jefe_mascara/mask_break_02.png", "jefe_mascara/mask_break_03": "jefe_mascara/mask_break_03.png", "jefe_mascara/mask_break_04": "jefe_mascara/mask_break_04.png", "jefe_mascara/mask_break_05": "jefe_mascara/mask_break_05.png", "jefe_mascara/mask_break_06": "jefe_mascara/mask_break_06.png", "jefe_mascara/mask_break_07": "jefe_mascara/mask_break_07.png", "jefe_mascara/mask_break_08": "jefe_mascara/mask_break_08.png", "jefe_mascara/walk_01": "jefe_mascara/walk_01.png", "jefe_mascara/walk_02": "jefe_mascara/walk_02.png", "jefe_mascara/walk_03": "jefe_mascara/walk_03.png", "jefe_mascara/walk_04": "jefe_mascara/walk_04.png", "jefe_mascara/walk_05": "jefe_mascara/walk_05.png", "jefe_mascara/walk_06": "jefe_mascara/walk_06.png", "jefe_sin_mascara/attack_01": "jefe_sin_mascara/attack_01.png", "jefe_sin_mascara/attack_02": "jefe_sin_mascara/attack_02.png", "jefe_sin_mascara/attack_03": "jefe_sin_mascara/attack_03.png", "jefe_sin_mascara/attack_04": "jefe_sin_mascara/attack_04.png", "jefe_sin_mascara/attack_05": "jefe_sin_mascara/attack_05.png", "jefe_sin_mascara/attack_06": "jefe_sin_mascara/attack_06.png", "jefe_sin_mascara/attack_07": "jefe_sin_mascara/attack_07.png", "jefe_sin_mascara/attack_08": "jefe_sin_mascara/attack_08.png", "jefe_sin_mascara/cry_01": "jefe_sin_mascara/cry_01.png", "jefe_sin_mascara/cry_02": "jefe_sin_mascara/cry_02.png", "jefe_sin_mascara/cry_03": "jefe_sin_mascara/cry_03.png", "jefe_sin_mascara/cry_04": "jefe_sin_mascara/cry_04.png", "jefe_sin_mascara/cry_05": "jefe_sin_mascara/cry_05.png", "jefe_sin_mascara/cry_06": "jefe_sin_mascara/cry_06.png", "jefe_sin_mascara/cry_07": "jefe_sin_mascara/cry_07.png", "jefe_sin_mascara/cry_08": "jefe_sin_mascara/cry_08.png", "jefe_sin_mascara/defeat_01": "jefe_sin_mascara/defeat_01.png", "jefe_sin_mascara/defeat_02": "jefe_sin_mascara/defeat_02.png", "jefe_sin_mascara/defeat_03": "jefe_sin_mascara/defeat_03.png", "jefe_sin_mascara/defeat_04": "jefe_sin_mascara/defeat_04.png", "jefe_sin_mascara/hit_01": "jefe_sin_mascara/hit_01.png", "jefe_sin_mascara/hit_02": "jefe_sin_mascara/hit_02.png", "jefe_sin_mascara/hit_03": "jefe_sin_mascara/hit_03.png", "jefe_sin_mascara/hit_04": "jefe_sin_mascara/hit_04.png", "jefe_sin_mascara/hit_05": "jefe_sin_mascara/hit_05.png", "jefe_sin_mascara/idle_01": "jefe_sin_mascara/idle_01.png", "jefe_sin_mascara/idle_02": "jefe_sin_mascara/idle_02.png", "jefe_sin_mascara/idle_03": "jefe_sin_mascara/idle_03.png", "jefe_sin_mascara/idle_04": "jefe_sin_mascara/idle_04.png", "jefe_sin_mascara/walk_01": "jefe_sin_mascara/walk_01.png", "jefe_sin_mascara/walk_02": "jefe_sin_mascara/walk_02.png", "jefe_sin_mascara/walk_03": "jefe_sin_mascara/walk_03.png", "jefe_sin_mascara/walk_04": "jefe_sin_mascara/walk_04.png", "jefe_sin_mascara/walk_05": "jefe_sin_mascara/walk_05.png", "jefe_sin_mascara/walk_06": "jefe_sin_mascara/walk_06.png", "monstruo/ataque_especial_01": "monstruo/ataque_especial_01.png", "monstruo/ataque_especial_02": "monstruo/ataque_especial_02.png", "monstruo/ataque_especial_03": "monstruo/ataque_especial_03.png", "monstruo/ataque_especial_04": "monstruo/ataque_especial_04.png", "monstruo/ataque_especial_05": "monstruo/ataque_especial_05.png", "monstruo/ataque_especial_06": "monstruo/ataque_especial_06.png", "monstruo/ataque_especial_07": "monstruo/ataque_especial_07.png", "monstruo/ataque_especial_08": "monstruo/ataque_especial_08.png", "monstruo/caminando_01": "monstruo/caminando_01.png", "monstruo/caminando_02": "monstruo/caminando_02.png", "monstruo/caminando_03": "monstruo/caminando_03.png", "monstruo/caminando_04": "monstruo/caminando_04.png", "monstruo/caminando_05": "monstruo/caminando_05.png", "monstruo/caminando_06": "monstruo/caminando_06.png", "monstruo/caminando_07": "monstruo/caminando_07.png", "monstruo/caminando_08": "monstruo/caminando_08.png", "monstruo/caminando_09": "monstruo/caminando_09.png", "monstruo/caminando_10": "monstruo/caminando_10.png", "monstruo/caminando_11": "monstruo/caminando_11.png", "monstruo/caminando_12": "monstruo/caminando_12.png", "monstruo/carga_basura_01": "monstruo/carga_basura_01.png", "monstruo/carga_basura_02": "monstruo/carga_basura_02.png", "monstruo/carga_basura_03": "monstruo/carga_basura_03.png", "monstruo/carga_basura_04": "monstruo/carga_basura_04.png", "monstruo/carga_basura_05": "monstruo/carga_basura_05.png", "monstruo/carga_basura_06": "monstruo/carga_basura_06.png", "monstruo/carga_basura_07": "monstruo/carga_basura_07.png", "monstruo/carga_basura_08": "monstruo/carga_basura_08.png", "monstruo/carga_basura_09": "monstruo/carga_basura_09.png", "monstruo/corriendo_02": "monstruo/corriendo_02.png", "monstruo/corriendo_03": "monstruo/corriendo_03.png", "monstruo/corriendo_04": "monstruo/corriendo_04.png", "monstruo/corriendo_05": "monstruo/corriendo_05.png", "monstruo/corriendo_06": "monstruo/corriendo_06.png", "monstruo/corriendo_07": "monstruo/corriendo_07.png", "monstruo/corriendo_08": "monstruo/corriendo_08.png", "monstruo/corriendo_09": "monstruo/corriendo_09.png", "monstruo/defensa_tapa_01": "monstruo/defensa_tapa_01.png", "monstruo/defensa_tapa_02": "monstruo/defensa_tapa_02.png", "monstruo/defensa_tapa_03": "monstruo/defensa_tapa_03.png", "monstruo/defensa_tapa_04": "monstruo/defensa_tapa_04.png", "monstruo/defensa_tapa_05": "monstruo/defensa_tapa_05.png", "monstruo/defensa_tapa_06": "monstruo/defensa_tapa_06.png", "monstruo/defensa_tapa_07": "monstruo/defensa_tapa_07.png", "monstruo/defensa_tapa_08": "monstruo/defensa_tapa_08.png", "monstruo/defensa_tapa_09": "monstruo/defensa_tapa_09.png", "monstruo/defensa_tapa_10": "monstruo/defensa_tapa_10.png", "monstruo/lanzamiento_03": "monstruo/lanzamiento_03.png", "monstruo/lanzamiento_04": "monstruo/lanzamiento_04.png", "monstruo/lanzamiento_05": "monstruo/lanzamiento_05.png", "monstruo/lanzamiento_06": "monstruo/lanzamiento_06.png", "monstruo/reposo_01": "monstruo/reposo_01.png", "monstruo/reposo_02": "monstruo/reposo_02.png", "monstruo/reposo_03": "monstruo/reposo_03.png", "monstruo/reposo_04": "monstruo/reposo_04.png", "monstruo/reposo_05": "monstruo/reposo_05.png", "monstruo/reposo_06": "monstruo/reposo_06.png", "monstruo/reposo_07": "monstruo/reposo_07.png", "monstruo/reposo_08": "monstruo/reposo_08.png", "monstruo/reposo_09": "monstruo/reposo_09.png", "nivel/pozo": "nivel/pozo.png", "nivel/pozo_agua": "nivel/pozo_agua.png", "nivel/pozo_seco": "nivel/pozo_seco.png", "nivel/gota": "nivel/gota.png", "nivel/gota_hud": "nivel/gota_hud.png", "nivel/basura_toxica": "nivel/basura_toxica.png", "nivel/retrato_aqua": "nivel/retrato_aqua.png", "nivel/retrato_yani": "nivel/retrato_yani.png", "nivel/retrato_corvo": "nivel/retrato_corvo.png", "nivel/plataforma": "nivel/plataforma.png", "nivel/plataforma_corta": "nivel/plataforma_corta.png", "nivel/plataforma_larga": "nivel/plataforma_larga.png", "nivel/plataforma_b": "nivel/plataforma_b.png", "nivel/plataforma_c": "nivel/plataforma_c.png", "nivel/plataforma_d": "nivel/plataforma_d.png", "nivel/plataforma_e": "nivel/plataforma_e.png", "nivel/puas": "nivel/puas.png", "nivel/puas_b": "nivel/puas_b.png", "nivel/puas_techo": "nivel/puas_techo.png", "nivel/bomba": "nivel/bomba.png", "nivel/toxico": "nivel/toxico.png", "nivel/bote": "nivel/bote.png", "nivel/charco_toxico": "nivel/charco_toxico.png", "nivel/senaletica": "nivel/senaletica.png", "nivel/llanta": "nivel/llanta.png", "nivel/cubo": "nivel/cubo.png", "nivel/humo": "nivel/humo.png", "nivel/caja_fuerte": "nivel/caja_fuerte.png", "nivel/fuente": "nivel/fuente.png", "nivel/fuente_b": "nivel/fuente_b.png", "nivel/fondo_toxico": "nivel/fondo_toxico.png", "nivel/fondo_paisaje": "nivel/fondo_paisaje.png", "nivel/fondo_fabrica": "nivel/fondo_fabrica.png", "nivel/rio_toxico": "nivel/rio_toxico.png", "nivel/bandera_meta": "nivel/bandera_meta.png", "nivel/burbujas": "nivel/burbujas.png", "nivel/retrato_jefe": "nivel/retrato_jefe.png", "nivel/retrato_padre": "nivel/retrato_padre.png", "nivel1/alga_a": "nivel1/alga_a.png", "nivel1/alga_b": "nivel1/alga_b.png", "nivel1/alga_c": "nivel1/alga_c.png", "nivel1/andamio_a": "nivel1/andamio_a.png", "nivel1/andamio_b": "nivel1/andamio_b.png", "nivel1/caja_a": "nivel1/caja_a.png", "nivel1/caja_b": "nivel1/caja_b.png", "nivel1/cerca": "nivel1/cerca.png", "nivel1/llanta_rama": "nivel1/llanta_rama.png", "nivel1/mata_der": "nivel1/mata_der.png", "nivel1/mata_izq": "nivel1/mata_izq.png", "nivel1/piedra": "nivel1/piedra.png", "nivel1/pinchos_caja": "nivel1/pinchos_caja.png", "nivel1/pinchos_chicos": "nivel1/pinchos_chicos.png", "nivel1/puente_a": "nivel1/puente_a.png", "nivel1/puente_b": "nivel1/puente_b.png", "nivel1/reciclaje_a": "nivel1/reciclaje_a.png", "nivel1/reciclaje_b": "nivel1/reciclaje_b.png", "nivel1/tronco_a": "nivel1/tronco_a.png", "nivel1/tronco_b": "nivel1/tronco_b.png", "nivel1/fondo": "nivel1/fondo.png", "nivel3/andamio_inestable": "nivel3/andamio_inestable.png", "nivel3/andamio_plataforma_madera": "nivel3/andamio_plataforma_madera.png", "nivel3/andamio_plataforma_rota": "nivel3/andamio_plataforma_rota.png", "nivel3/andamio_torre": "nivel3/andamio_torre.png", "nivel3/barandal_derrumbado": "nivel3/barandal_derrumbado.png", "nivel3/barrera_concreto": "nivel3/barrera_concreto.png", "nivel3/barrera_concreto_rayada": "nivel3/barrera_concreto_rayada.png", "nivel3/barriles_apilados": "nivel3/barriles_apilados.png", "nivel3/barriles_apilados_derramando_acido": "nivel3/barriles_apilados_derramando_acido.png", "nivel3/barriles_y_cajas": "nivel3/barriles_y_cajas.png", "nivel3/barril_con_tubo_en_llamas": "nivel3/barril_con_tubo_en_llamas.png", "nivel3/barril_oxidado": "nivel3/barril_oxidado.png", "nivel3/barril_oxidado_en_llamas": "nivel3/barril_oxidado_en_llamas.png", "nivel3/barril_oxidado_fuga_acido": "nivel3/barril_oxidado_fuga_acido.png", "nivel3/barril_rodando_derrame_toxico": "nivel3/barril_rodando_derrame_toxico.png", "nivel3/barril_verde_contaminado": "nivel3/barril_verde_contaminado.png", "nivel3/barril_verde_derrame_acido": "nivel3/barril_verde_derrame_acido.png", "nivel3/barril_verde_en_llamas": "nivel3/barril_verde_en_llamas.png", "nivel3/barril_volcado_derrame_toxico": "nivel3/barril_volcado_derrame_toxico.png", "nivel3/barril_y_barril_volcado_derramando": "nivel3/barril_y_barril_volcado_derramando.png", "nivel3/barril_y_barril_volcado_derramando_02": "nivel3/barril_y_barril_volcado_derramando_02.png", "nivel3/botella_agua_chica": "nivel3/botella_agua_chica.png", "nivel3/botella_agua_mediana": "nivel3/botella_agua_mediana.png", "nivel3/cables_pelados_enredados_chispas": "nivel3/cables_pelados_enredados_chispas.png", "nivel3/cable_electrico_cortado_chispas": "nivel3/cable_electrico_cortado_chispas.png", "nivel3/cajas_madera_y_caja_h2o": "nivel3/cajas_madera_y_caja_h2o.png", "nivel3/charco_agua_contaminada": "nivel3/charco_agua_contaminada.png", "nivel3/charco_agua_toxica_vapores": "nivel3/charco_agua_toxica_vapores.png", "nivel3/charco_contaminado": "nivel3/charco_contaminado.png", "nivel3/charco_contaminado_mediano": "nivel3/charco_contaminado_mediano.png", "nivel3/charco_electrificado": "nivel3/charco_electrificado.png", "nivel3/charco_lodo_grande": "nivel3/charco_lodo_grande.png", "nivel3/charco_lodo_toxico_vapores": "nivel3/charco_lodo_toxico_vapores.png", "nivel3/conos_trafico": "nivel3/conos_trafico.png", "nivel3/escalera_metal": "nivel3/escalera_metal.png", "nivel3/escombro_con_estacas": "nivel3/escombro_con_estacas.png", "nivel3/escombro_piedras": "nivel3/escombro_piedras.png", "nivel3/escombro_varillas_puntiagudas": "nivel3/escombro_varillas_puntiagudas.png", "nivel3/garrafon_h2o_chico": "nivel3/garrafon_h2o_chico.png", "nivel3/garrafon_h2o_grande": "nivel3/garrafon_h2o_grande.png", "nivel3/garrafon_h2o_mediano": "nivel3/garrafon_h2o_mediano.png", "nivel3/generador_electrico": "nivel3/generador_electrico.png", "nivel3/letrero_agua_contaminada": "nivel3/letrero_agua_contaminada.png", "nivel3/letrero_caido_cable_electrico": "nivel3/letrero_caido_cable_electrico.png", "nivel3/letrero_h2o_company": "nivel3/letrero_h2o_company.png", "nivel3/letrero_obra_flecha": "nivel3/letrero_obra_flecha.png", "nivel3/llantas_apiladas": "nivel3/llantas_apiladas.png", "nivel3/llantas_y_escombro_con_charco": "nivel3/llantas_y_escombro_con_charco.png", "nivel3/malla_metal_rota": "nivel3/malla_metal_rota.png", "nivel3/panorama": "nivel3/panorama.png", "nivel3/pasarela_metal_barandal": "nivel3/pasarela_metal_barandal.png", "nivel3/pasarela_metal_barandal_roto": "nivel3/pasarela_metal_barandal_roto.png", "nivel3/piedras_sueltas": "nivel3/piedras_sueltas.png", "nivel3/pila_cajas_barril_llantas": "nivel3/pila_cajas_barril_llantas.png", "nivel3/pila_escombro_negro": "nivel3/pila_escombro_negro.png", "nivel3/pila_llantas_basura": "nivel3/pila_llantas_basura.png", "nivel3/plataforma_rejilla_metal": "nivel3/plataforma_rejilla_metal.png", "nivel3/plataforma_rejilla_metal_doble": "nivel3/plataforma_rejilla_metal_doble.png", "nivel3/rampa_metal": "nivel3/rampa_metal.png", "nivel3/rampa_metal_baja": "nivel3/rampa_metal_baja.png", "nivel3/roca": "nivel3/roca.png", "nivel3/senal_advertencia_triangulo": "nivel3/senal_advertencia_triangulo.png", "nivel3/senal_hombres_trabajando": "nivel3/senal_hombres_trabajando.png", "nivel3/tableros_electricos_corto_circuito": "nivel3/tableros_electricos_corto_circuito.png", "nivel3/tubo_codo_derrame_toxico_01": "nivel3/tubo_codo_derrame_toxico_01.png", "nivel3/tubo_codo_derrame_toxico_02": "nivel3/tubo_codo_derrame_toxico_02.png", "nivel3/tubo_codo_goteando_agua_toxica": "nivel3/tubo_codo_goteando_agua_toxica.png", "nivel3/tubo_fuga_agua_contaminada": "nivel3/tubo_fuga_agua_contaminada.png", "nivel3/tubo_fuga_vapor_caliente": "nivel3/tubo_fuga_vapor_caliente.png", "nivel3/tubo_roto_derrame_toxico": "nivel3/tubo_roto_derrame_toxico.png", "nivel3/tubo_roto_en_llamas": "nivel3/tubo_roto_en_llamas.png", "nivel3/tubo_vertiendo_agua_toxica_01": "nivel3/tubo_vertiendo_agua_toxica_01.png", "nivel3/tubo_vertiendo_agua_toxica_02": "nivel3/tubo_vertiendo_agua_toxica_02.png", "nivel3/valla_alambre_de_puas": "nivel3/valla_alambre_de_puas.png", "nivel3/valla_malla_metal": "nivel3/valla_malla_metal.png", "nivel3/valla_metal": "nivel3/valla_metal.png", "nivel3/varillas_y_escombro": "nivel3/varillas_y_escombro.png", "nivel3/ventilador_industrial_01": "nivel3/ventilador_industrial_01.png", "nivel3/ventilador_industrial_02": "nivel3/ventilador_industrial_02.png", "nivel3/vidrios_rotos_y_varillas": "nivel3/vidrios_rotos_y_varillas.png", "nivel3/viga_caida_con_escombros": "nivel3/viga_caida_con_escombros.png", "nivel3/viga_cayendo_sobre_andamio": "nivel3/viga_cayendo_sobre_andamio.png", "nivel3/viga_horizontal_delgada": "nivel3/viga_horizontal_delgada.png", "nivel3/viga_metal_bloque": "nivel3/viga_metal_bloque.png", "nivel3/viga_metal_larga": "nivel3/viga_metal_larga.png", "nivel3/viga_metal_larga_02": "nivel3/viga_metal_larga_02.png", "nivel3/viga_metal_mediana": "nivel3/viga_metal_mediana.png", "nivel3/viga_metal_oxidada": "nivel3/viga_metal_oxidada.png", "nivel3/viga_vertical_01": "nivel3/viga_vertical_01.png", "nivel3/viga_vertical_02": "nivel3/viga_vertical_02.png", "nivel3/viga_vertical_alta": "nivel3/viga_vertical_alta.png", "policia/defeat_01": "policia/defeat_01.png", "policia/defeat_02": "policia/defeat_02.png", "policia/defeat_03": "policia/defeat_03.png", "policia/defeat_04": "policia/defeat_04.png", "policia/hit_01": "policia/hit_01.png", "policia/hit_02": "policia/hit_02.png", "policia/hit_03": "policia/hit_03.png", "policia/idle_01": "policia/idle_01.png", "policia/idle_02": "policia/idle_02.png", "policia/idle_03": "policia/idle_03.png", "policia/idle_04": "policia/idle_04.png", "policia/throw_01": "policia/throw_01.png", "policia/throw_02": "policia/throw_02.png", "policia/throw_03": "policia/throw_03.png", "policia/throw_04": "policia/throw_04.png", "policia/throw_05": "policia/throw_05.png", "policia/throw_06": "policia/throw_06.png", "policia/throw_07": "policia/throw_07.png", "policia/throw_08": "policia/throw_08.png", "policia/throw_09": "policia/throw_09.png", "policia/walk_01": "policia/walk_01.png", "policia/walk_02": "policia/walk_02.png", "policia/walk_03": "policia/walk_03.png", "policia/walk_04": "policia/walk_04.png", "policia/walk_05": "policia/walk_05.png", "policia/walk_06": "policia/walk_06.png", "policia/walk_07": "policia/walk_07.png", "robot/defeat_01": "robot/defeat_01.png", "robot/defeat_02": "robot/defeat_02.png", "robot/defeat_03": "robot/defeat_03.png", "robot/defeat_04": "robot/defeat_04.png", "robot/defeat_05": "robot/defeat_05.png", "robot/hit_01": "robot/hit_01.png", "robot/hit_02": "robot/hit_02.png", "robot/hit_03": "robot/hit_03.png", "robot/hit_04": "robot/hit_04.png", "robot/idle_01": "robot/idle_01.png", "robot/idle_02": "robot/idle_02.png", "robot/idle_03": "robot/idle_03.png", "robot/move_01": "robot/move_01.png", "robot/move_02": "robot/move_02.png", "robot/move_03": "robot/move_03.png", "robot/move_04": "robot/move_04.png", "robot/move_05": "robot/move_05.png", "robot/move_06": "robot/move_06.png", "robot/spraying_01": "robot/spraying_01.png", "robot/spraying_02": "robot/spraying_02.png", "robot/spraying_03": "robot/spraying_03.png", "robot/spraying_04": "robot/spraying_04.png", "robot/spraying_05": "robot/spraying_05.png", "yani/agachado_01": "yani/agachado_01.png", "yani/agachado_02": "yani/agachado_02.png", "yani/agachado_03": "yani/agachado_03.png", "yani/agachado_04": "yani/agachado_04.png", "yani/agachado_05": "yani/agachado_05.png", "yani/botella_meta_01": "yani/botella_meta_01.png", "yani/botella_meta_02": "yani/botella_meta_02.png", "yani/botella_meta_03": "yani/botella_meta_03.png", "yani/botella_meta_objeto_01": "yani/botella_meta_objeto_01.png", "yani/caminando_01": "yani/caminando_01.png", "yani/caminando_02": "yani/caminando_02.png", "yani/caminando_03": "yani/caminando_03.png", "yani/caminando_04": "yani/caminando_04.png", "yani/caminando_05": "yani/caminando_05.png", "yani/caminando_06": "yani/caminando_06.png", "yani/caminando_07": "yani/caminando_07.png", "yani/caminando_08": "yani/caminando_08.png", "yani/caminando_09": "yani/caminando_09.png", "yani/corriendo_01": "yani/corriendo_01.png", "yani/corriendo_02": "yani/corriendo_02.png", "yani/corriendo_03": "yani/corriendo_03.png", "yani/corriendo_04": "yani/corriendo_04.png", "yani/corriendo_05": "yani/corriendo_05.png", "yani/corriendo_06": "yani/corriendo_06.png", "yani/corriendo_07": "yani/corriendo_07.png", "yani/corriendo_08": "yani/corriendo_08.png", "yani/disparando_01": "yani/disparando_01.png", "yani/disparando_02": "yani/disparando_02.png", "yani/disparando_proyectil_01": "yani/disparando_proyectil_01.png", "yani/disparando_proyectil_02": "yani/disparando_proyectil_02.png", "yani/disparando_proyectil_03": "yani/disparando_proyectil_03.png", "yani/disparando_proyectil_04": "yani/disparando_proyectil_04.png", "yani/disparando_proyectil_05": "yani/disparando_proyectil_05.png", "yani/idle_01": "yani/idle_01.png", "yani/idle_02": "yani/idle_02.png", "yani/idle_03": "yani/idle_03.png", "yani/idle_04": "yani/idle_04.png", "yani/idle_05": "yani/idle_05.png", "yani/idle_06": "yani/idle_06.png", "yani/idle_07": "yani/idle_07.png", "yani/idle_08": "yani/idle_08.png", "yani/muerte_derrota_01": "yani/muerte_derrota_01.png", "yani/muerte_derrota_02": "yani/muerte_derrota_02.png", "yani/muerte_derrota_03": "yani/muerte_derrota_03.png", "yani/reaccion_impacto_01": "yani/reaccion_impacto_01.png", "yani/reaccion_impacto_02": "yani/reaccion_impacto_02.png", "yani/reaccion_impacto_03": "yani/reaccion_impacto_03.png", "yani/reaccion_impacto_04": "yani/reaccion_impacto_04.png", "yani/recolectando_gota_01": "yani/recolectando_gota_01.png", "yani/recolectando_gota_02": "yani/recolectando_gota_02.png", "yani/recolectando_gota_03": "yani/recolectando_gota_03.png", "yani/saltando_01": "yani/saltando_01.png", "yani/saltando_02": "yani/saltando_02.png", "yani/saltando_03": "yani/saltando_03.png", "yani/saltando_04": "yani/saltando_04.png", "yani/saltando_05": "yani/saltando_05.png", "yani/saltando_06": "yani/saltando_06.png"};
 const IMGS = {};       // "carpeta/nombre" -> HTMLImageElement (o null si falló)
 let loadDone = 0, loadTotal = 0, assetsReady = false;
 
 function img(key) { return IMGS[key] || null; }
 function framesOf(folder, pattern, skip) {
+  // Igual que el _cargar del original: junta TODOS los archivos
+  // patron_NN.png que existan, en orden. No se detiene en el primer
+  // hueco: hay series que no empiezan en _01 (el correr de Aqua
+  // empieza en _02) y con un corte temprano la animación salía vacía.
   const out = [];
-  for (let i = 1; i <= 40; i++) {
-    const name = pattern + "_" + String(i).padStart(2, "0");
+  const re = new RegExp("^" + folder.replace(/\//g, "\\/") + "\\/" +
+    pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "_(\\d+)\\.png$");
+  const found = [];
+  for (const key in MANIFEST) {
+    const m = MANIFEST[key].match(re);
+    if (m) found.push([parseInt(m[1], 10), key]);
+  }
+  found.sort((a, b) => a[0] - b[0]);
+  for (const [, key] of found) {
+    const name = key.slice(folder.length + 1);
     if (skip && skip.has(name)) continue;
-    const key = folder + "/" + name;
-    if (!(key in MANIFEST)) break;
     if (IMGS[key]) out.push(IMGS[key]);
   }
   return out;
@@ -259,7 +269,8 @@ function buildSpriteTables() {
   }
   SPR = {
     fondo: img("nivel1/fondo"), titleBg: img("intro/title"),
-    pozo: img("nivel/pozo"), gota: img("nivel/gota"), gotaHud: img("nivel/gota_hud"),
+    pozo: img("nivel/pozo"), pozoAgua: img("nivel/pozo_agua"), pozoSeco: img("nivel/pozo_seco"),
+    gota: img("nivel/gota"), gotaHud: img("nivel/gota_hud"),
     corazonLleno: img("hud/corazon_lleno"), corazonVacio: img("hud/corazon_vacio"),
     basura: img("nivel/basura_toxica"),
     fondoPaisaje: img("nivel/fondo_paisaje"), fondoToxico: img("nivel/fondo_toxico"),
@@ -300,6 +311,39 @@ function preloadAssets(done) {
   // Red de seguridad: si la red va muy lenta, se entra con lo que haya
   // cargado (los sprites que falten se dibujan como formas simples).
   setTimeout(finish, 20000);
+}
+
+// ---------------------------------------------------------------------------
+// Videos de fondo (flipbook, igual que el original: la pantalla de inicio
+// pasa los cuadros de assets/intro a 12 fps y el final los de assets/final
+// a 10 fps). Se cargan TARDE y en segundo plano, sin bloquear la entrada:
+// mientras no haya cuadros, los menús usan la portada fija (intro/title).
+// ---------------------------------------------------------------------------
+const VIDEOS = {
+  intro: { frames: [], fps: 12, total: 120, loading: false, t0: 0 },
+  final: { frames: [], fps: 10, total: 120, loading: false, t0: 0 }
+};
+function loadVideo(name) {
+  const v = VIDEOS[name];
+  if (!v || v.loading) return;
+  v.loading = true;
+  v.t0 = performance.now();
+  for (let i = 0; i < v.total; i++) {
+    const im = new Image();
+    im.onload = () => { v.frames[i] = im; };
+    im.onerror = () => { v.frames[i] = null; };
+    im.src = "assets/" + name + "/f_" + String(i).padStart(3, "0") + ".jpg";
+  }
+}
+function videoFrame(name) {
+  const v = VIDEOS[name];
+  if (!v || !v.loading) return null;
+  const idx = Math.floor((performance.now() - v.t0) / 1000 * v.fps) % v.total;
+  if (v.frames[idx]) return v.frames[idx];
+  // el cuadro que toca aún no llega: se usa el cargado más cercano
+  for (let i = idx - 1; i >= 0; i--) if (v.frames[i]) return v.frames[i];
+  for (let i = v.total - 1; i > idx; i--) if (v.frames[i]) return v.frames[i];
+  return null;
 }
 // ---------------------------------------------------------------------------
 // Entidades (puerto de juego/entidades.py vía Engine.kt)
@@ -1901,8 +1945,7 @@ function drawGame() {
     if (en.rect.x - cx < -250 || en.rect.x - cx > 1530) continue;
     const set = SETS[en.data.paquete];
     const frames = set && set[en.anim.state];
-    if (!frames || !frames.length) continue;
-    const bmp = frames[en.anim.frameIndex() % frames.length];
+    const bmp = frames && frames.length ? frames[en.anim.frameIndex() % frames.length] : null;
     const alpha = (en.parpadeo > 0 && en.parpadeo % 4 < 2) ? 120 : 255;
     drawSprite(bmp, en.rect.centerX - cx, en.rect.bottom - cy, en.facing, alpha, "#5a7a3a");
   }
@@ -1951,14 +1994,14 @@ function drawGame() {
           ctx.drawImage(bmp, 0, 0);
         }
         ctx.restore();
+      } else {
+        drawSprite(null, b.rect.centerX - cx, b.rect.bottom - cy, 1, 255, "#1a65d7");
       }
     } else if (b instanceof BossBasura) {
       const frames = SETS.monstruo && SETS.monstruo[b.anim.state];
-      if (frames && frames.length) {
-        const bmp = frames[b.anim.frameIndex() % frames.length];
-        const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
-        drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.enemy.facing, alpha);
-      }
+      const bmp = frames && frames.length ? frames[b.anim.frameIndex() % frames.length] : null;
+      const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
+      drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.enemy.facing, alpha);
     } else if (b instanceof BossEmpresario) {
       if (b.rompiendo > 0) {
         ctx.fillStyle = "rgba(255,240,180,0.27)";
@@ -1966,27 +2009,27 @@ function drawGame() {
       }
       const conjunto = b.conMascara ? "jefe_mascara" : "jefe_sin_mascara";
       const frames = SETS[conjunto] && SETS[conjunto][b.anim.state];
-      if (frames && frames.length) {
-        const bmp = frames[b.anim.frameIndex() % frames.length];
-        const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
-        drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.facing, alpha);
-      }
+      const bmp = frames && frames.length ? frames[b.anim.frameIndex() % frames.length] : null;
+      const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
+      drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.facing, alpha);
     }
   }
   if (eng.corvo) {
     const cv = eng.corvo;
     const frames = SETS.corvo && SETS.corvo[cv.anim.state];
-    if (frames && frames.length) {
-      const bmp = frames[cv.anim.frameIndex() % frames.length];
-      drawSprite(bmp, cv.rect.centerX - cx, cv.rect.bottom - cy, cv.mirando, 255);
-    }
+    const bmp = frames && frames.length ? frames[cv.anim.frameIndex() % frames.length] : null;
+    drawSprite(bmp, cv.rect.centerX - cx, cv.rect.bottom - cy, cv.mirando, 255, "#1a65d7");
   }
   for (const bl of eng.bullets) {
     const set = SETS[bl.owner];
     const frames = set && set.bola;
-    if (!frames || !frames.length) continue;
-    const bmp = frames[Math.floor(bl.animTime / 4) % frames.length];
+    const bmp = frames && frames.length ? frames[Math.floor(bl.animTime / 4) % frames.length] : null;
     const bcx = bl.rect.centerX - cx, bcy = bl.rect.centerY - cy;
+    if (!bmp) {
+      ctx.fillStyle = bl.owner === "yani" ? "#ff8ac2" : "#b48cff";
+      ctx.beginPath(); ctx.arc(bcx, bcy, 16, 0, 6.3); ctx.fill();
+      continue;
+    }
     ctx.save();
     if (bl.dir >= 0) ctx.drawImage(bmp, bcx - bmp.naturalWidth / 2, bcy - bmp.naturalHeight / 2);
     else {
@@ -1998,7 +2041,11 @@ function drawGame() {
   }
   for (const eb of eng.ebullets) {
     const bmp = SPR.proyectiles[eb.imgFolder + "/" + eb.imgName] || SPR.basura;
-    if (!bmp) continue;
+    if (!bmp) {
+      ctx.fillStyle = "#6a8f3a";
+      ctx.beginPath(); ctx.arc(eb.rect.centerX - cx, eb.rect.centerY - cy, 18, 0, 6.3); ctx.fill();
+      continue;
+    }
     ctx.save();
     ctx.translate(eb.rect.centerX - cx, eb.rect.centerY - cy);
     ctx.rotate(eb.giro * Math.PI / 180);
@@ -2041,8 +2088,7 @@ function drawGame() {
   eng.players.forEach((pl, idx) => {
     const set = SETS[pl.character];
     const frames = set && set[pl.anim.state];
-    if (!frames || !frames.length) return;
-    const bmp = frames[pl.anim.frameIndex() % frames.length];
+    const bmp = frames && frames.length ? frames[pl.anim.frameIndex() % frames.length] : null;
     const alpha = (pl.invulnerable > 0 && Math.floor(pl.invulnerable / 4) % 2 === 0) ? 90 : 255;
     let pcx, pbottom;
     if (isClient && interpInit) {
@@ -2074,6 +2120,16 @@ function drawGame() {
 function drawHud(eng) {
   const lleno = SPR.corazonLleno, vacio = SPR.corazonVacio;
   if (lleno && vacio) {
+    // Respaldo oscuro suave: corazones y gotas se leen sobre cualquier fondo.
+    const hw = C.VIDAS * (lleno.naturalWidth + 6) - 6;
+    const filaAbajo = Math.max(22 + lleno.naturalHeight,
+      SPR.gotaHud ? 86 + SPR.gotaHud.naturalHeight : 0);
+    ctx.fillStyle = "rgba(10,14,26,0.38)";
+    roundRectPath(12, 12, hw + 26, filaAbajo - 2, 14); ctx.fill();
+    const p2pre = eng.p2;
+    if (p2pre) {
+      roundRectPath(1280 - 38 - hw, 12, hw + 26, 22 + lleno.naturalHeight - 2, 14); ctx.fill();
+    }
     for (let i = 0; i < C.VIDAS; i++) {
       const im = i < eng.p1.vidas ? lleno : vacio;
       ctx.drawImage(im, 24 + i * (im.naturalWidth + 6), 22);
@@ -2209,7 +2265,15 @@ function menuButtons() {
   return [];
 }
 function drawMenuBackground() {
-  const bg = SPR.titleBg || SPR.fondo;
+  // Fondos como el juego original: el título pasa la cinemática de
+  // intro (con la portada fija de respaldo), la victoria del nivel 3
+  // pasa la cinemática final, y las pantallas de fin usan el arte del
+  // pozo con agua (ganar) o del pozo seco (perder).
+  let bg = SPR.titleBg || SPR.fondo;
+  if (screen === "TITLE") bg = videoFrame("intro") || bg;
+  else if (screen === "VICTORY" && engine && engine.level === 3) bg = videoFrame("final") || bg;
+  else if (screen === "VICTORY") bg = SPR.pozoAgua || bg;
+  else if (screen === "GAMEOVER") bg = SPR.pozoSeco || bg;
   ctx.fillStyle = "rgb(12,10,18)";
   ctx.fillRect(0, 0, viewW, viewH);
   if (!bg) return;
@@ -2232,16 +2296,41 @@ function drawMenuBackground() {
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fillRect(0, 0, viewW, viewH);
 }
-function drawMenuButton(b) {
-  roundRectPath(b.left, b.top, b.w, b.h, 18);
-  ctx.fillStyle = COL.panel; ctx.fill();
+/** Panel de menú con volumen: sombra, degradado azul noche (la paleta
+ *  del juego: panel 18,26,48 con borde 90,150,210) y brillo superior. */
+function panelBox(x, y, w, h, r) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.5)";
+  ctx.shadowBlur = 16;
+  ctx.shadowOffsetY = 5;
+  roundRectPath(x, y, w, h, r);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, "rgba(44,66,116,0.96)");
+  g.addColorStop(0.45, "rgba(18,26,48,0.96)");
+  g.addColorStop(1, "rgba(9,13,26,0.96)");
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.restore();
+  roundRectPath(x, y, w, h, r);
   ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 3; ctx.stroke();
+  ctx.save();
+  ctx.globalAlpha = 0.20;
+  roundRectPath(x + 5, y + 4, w - 10, Math.max(2, h * 0.32), r * 0.7);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+}
+function drawMenuButton(b) {
+  panelBox(b.left, b.top, b.w, b.h, 18);
   const size = Math.min(viewH * 0.038, b.w / Math.max(8, b.label.length * 0.72));
   textOutlined(b.label, b.cx, b.cy + size * 0.36, size, COL.blanco, true, true);
 }
 function drawTitle() {
   drawMenuBackground();
   textOutlined("Un juego sobre el cuidado del agua  ·  Reto JAPAMI", viewW / 2, viewH * 0.46, viewH * 0.032, COL.gris, false, true);
+  // Avisos (p. ej. un error de conexión): se ven aquí, no se pierden
+  // en silencio al volver al menú.
+  if (statusText) textOutlined(statusText, viewW / 2, viewH * 0.505, viewH * 0.028, COL.rojo, false, true);
   for (const b of menuButtons()) drawMenuButton(b);
 }
 function drawSelect() {
@@ -2260,9 +2349,7 @@ function drawSelect() {
   textOutlined(subtitle, w / 2, h * 0.20, h * 0.035, COL.verde, true, true);
   for (const b of menuButtons()) {
     if (b.id === "aqua" || b.id === "yani") {
-      roundRectPath(b.left, b.top, b.w, b.h, 18);
-      ctx.fillStyle = COL.panel; ctx.fill();
-      ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 3; ctx.stroke();
+      panelBox(b.left, b.top, b.w, b.h, 18);
       const set = SETS[b.id];
       const frame = set && set.quieto && set.quieto[0];
       if (frame) {
@@ -2368,6 +2455,7 @@ function drawPauseOverlay() {
   for (const b of menuButtons()) drawMenuButton(b);
 }
 function drawEnd(won) {
+  if (won && engine && engine.level === 3) loadVideo("final");
   drawMenuBackground();
   const w = viewW, h = viewH;
   if (won) {
@@ -2396,15 +2484,28 @@ function drawEnd(won) {
 function drawLoading() {
   ctx.fillStyle = "rgb(12,10,18)";
   ctx.fillRect(0, 0, viewW, viewH);
-  textOutlined("BRIGADA 2030", viewW / 2, viewH * 0.42, viewH * 0.06, COL.blanco, true, true);
-  textOutlined("EL POZO DEL TIEMPO", viewW / 2, viewH * 0.52, viewH * 0.035, COL.azul, true, true);
+  const bg = IMGS["intro/title"];
+  if (bg) {
+    // La portada original de fondo mientras cargan los sprites.
+    const s = Math.max(viewW / bg.naturalWidth, viewH / bg.naturalHeight);
+    const dw = bg.naturalWidth * s, dh = bg.naturalHeight * s;
+    ctx.drawImage(bg, (viewW - dw) / 2, (viewH - dh) / 2, dw, dh);
+    ctx.fillStyle = "rgba(6,8,16,0.55)";
+    ctx.fillRect(0, 0, viewW, viewH);
+  } else {
+    textOutlined("BRIGADA 2030", viewW / 2, viewH * 0.42, viewH * 0.06, COL.blanco, true, true);
+    textOutlined("EL POZO DEL TIEMPO", viewW / 2, viewH * 0.52, viewH * 0.035, COL.azul, true, true);
+  }
   const pct = loadTotal ? Math.floor(loadDone / loadTotal * 100) : 0;
-  textOutlined(`Cargando el juego... ${pct}%`, viewW / 2, viewH * 0.64, viewH * 0.03, COL.gris, false, true);
+  textOutlined(`Cargando el juego... ${pct}%`, viewW / 2, viewH * 0.64, viewH * 0.03, COL.blanco, false, true);
   const bw = viewW * 0.5, bx = viewW * 0.25, by = viewH * 0.68;
-  ctx.fillStyle = "rgb(70,20,20)";
-  ctx.fillRect(bx, by, bw, 14);
-  ctx.fillStyle = COL.azul;
-  ctx.fillRect(bx, by, bw * pct / 100, 14);
+  roundRectPath(bx, by, bw, 16, 8);
+  ctx.fillStyle = "rgba(10,14,28,0.85)"; ctx.fill();
+  ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 2; ctx.stroke();
+  if (pct > 0) {
+    roundRectPath(bx + 2, by + 2, Math.max(10, (bw - 4) * pct / 100), 12, 6);
+    ctx.fillStyle = COL.azul; ctx.fill();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2504,42 +2605,68 @@ class RelayLink {
     this.remoteChar = null;
     this.lastSnapshot = null;
     this.pending = [];
+    // Despertar del servidor: el relay (Bonto) se duerme sin uso y la
+    // primera conexión puede fallar varias veces seguidas. Mientras no
+    // se haya logrado entrar (sin ROOM/JOINED todavía), se reintenta
+    // hasta cumplir retryMs en vez de rendirse al primer cierre.
+    this.hello = null;        // CREATE o "JOIN BR-####": se manda al abrir
+    this.established = false; // el servidor ya aceptó la sala
+    this.retryMs = 0;         // ventana total de reintentos al conectar
+    this.deadline = 0;
+    this.retryTimer = null;
   }
   _connect() {
     this.running = true;
+    if (this.retryMs > 0 && !this.deadline) this.deadline = Date.now() + this.retryMs;
     let ws;
     try { ws = new WebSocket(RELAY_URL); } catch (e) {
-      if (this.cb.onDisconnected) this.cb.onDisconnected();
+      this._closed();
       return;
     }
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;
+      if (this.hello && !this.established) this._raw(this.hello);
       const q = this.pending; this.pending = [];
       for (const m of q) this._raw(m);
     };
     ws.onmessage = ev => this._handle(String(ev.data).trim());
-    ws.onclose = () => {
-      if (this.running) { this.connected = false; if (this.cb.onDisconnected) this.cb.onDisconnected(); }
-    };
+    ws.onclose = () => this._closed();
     ws.onerror = () => { /* el cierre llega por onclose */ };
+    // Si el intento se queda colgado (servidor despertando a medias),
+    // se cierra a los 10 s para que entre el reintento.
+    const sock = ws;
+    setTimeout(() => {
+      if (this.ws === sock && sock.readyState !== 1) { try { sock.close(); } catch (e) {} }
+    }, 10000);
+  }
+  _closed() {
+    if (!this.running) return;
+    this.connected = false;
+    const now = Date.now();
+    if (!this.established && this.deadline && now < this.deadline) {
+      if (this.cb.onRetrying) this.cb.onRetrying(Math.max(1, Math.ceil((this.deadline - now) / 1000)));
+      this.retryTimer = setTimeout(() => { if (this.running) this._connect(); }, 2500);
+      return;
+    }
+    if (this.cb.onDisconnected) this.cb.onDisconnected();
   }
   _raw(m) { try { this.ws.send(m); } catch (e) { /* se reintenta en el siguiente */ } }
   _send(m) {
     if (this.ws && this.ws.readyState === 1) this._raw(m);
     else this.pending.push(m);
   }
-  createRoom() { this._connect(); this._send("CREATE"); }
-  joinRoom(code) { this._connect(); this._send("JOIN " + code); }
+  createRoom() { this.hello = "CREATE"; this._connect(); }
+  joinRoom(code) { this.hello = "JOIN " + code; this._connect(); }
   _handle(line) {
     if (line.startsWith("SN|")) { this.lastSnapshot = line; if (this.cb.onSnapshot) this.cb.onSnapshot(line); }
     else if (line.startsWith("IN ")) { const i = decodeInput(line); if (i) this.remoteInput = i; }
     else if (line.startsWith("CH ")) { const ch = decodeCharacter(line); if (ch) this.remoteChar = ch; }
     else if (line === "DA") { if (this.cb.onDialogueAdvance) this.cb.onDialogueAdvance(); }
-    else if (line.startsWith("ROOM ")) { if (this.cb.onRoomCode) this.cb.onRoomCode(line.slice(5).trim()); }
-    else if (line === "JOINED") { if (this.cb.onJoined) this.cb.onJoined(); }
+    else if (line.startsWith("ROOM ")) { this.established = true; if (this.cb.onRoomCode) this.cb.onRoomCode(line.slice(5).trim()); }
+    else if (line === "JOINED") { this.established = true; if (this.cb.onJoined) this.cb.onJoined(); }
     else if (line === "PEER") { if (this.cb.onPeerJoined) this.cb.onPeerJoined(); }
-    else if (line === "FULL" || line === "NO_ROOM") { if (this.cb.onJoinFailed) this.cb.onJoinFailed(line); }
+    else if (line === "FULL" || line === "NO_ROOM") { this.established = true; if (this.cb.onJoinFailed) this.cb.onJoinFailed(line); }
   }
   sendInput(seq, input) { if (!this.connected) return; this._send(encodeInput(seq, input)); }
   sendCharacter(ch) {
@@ -2552,6 +2679,8 @@ class RelayLink {
   sendSnapshot(s) { if (!this.connected) return; this._send(s); }
   stop() {
     this.running = false; this.connected = false;
+    if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
+    this.deadline = 0; this.hello = null;
     if (this.ws) { try { this.ws.close(); } catch (e) {} this.ws = null; }
   }
 }
@@ -2634,11 +2763,14 @@ function stopNet() {
 }
 function createOnlineRoom() {
   onlineCode = "";
-  statusText = "Conectando al servidor... (si está dormido, tarda unos segundos)";
+  statusText = "Despertando al servidor, espera...";
   screen = "ONLINE_WAIT";
   onlineLink = new RelayLink({
     onSnapshot: () => {},
     onDialogueAdvance: () => { if (engine) engine.avanzarDialogo(); },
+    onRetrying: secs => {
+      statusText = `Despertando al servidor, espera... (reintentando, ${secs} s)`;
+    },
     onRoomCode: code => {
       onlineCode = code;
       statusText = `Sala ${code} — comparte el código con tu amigo`;
@@ -2649,22 +2781,35 @@ function createOnlineRoom() {
       pendingMode = "ONLINE_HOST";
     },
     onDisconnected: () => {
-      statusText = "Se perdió la conexión con el servidor.";
       if (screen === "PLAYING") {
         // el jugador 2 se queda quieto; el anfitrión sigue jugando
-      } else if (screen === "ONLINE_WAIT" || screen === "SELECT" || screen === "LEVEL") {
+        statusText = "Se perdió la conexión con el servidor.";
+      } else if (screen === "ONLINE_WAIT") {
+        // No se regresa al menú en silencio: el error se queda visible
+        // en esta pantalla hasta que el jugador decida (CANCELAR).
+        statusText = onlineCode
+          ? "Se perdió la conexión con el servidor. Inténtalo de nuevo."
+          : "No se pudo conectar con el servidor. Revisa tu internet e inténtalo de nuevo.";
+        stopNet();
+      } else if (screen === "SELECT" || screen === "LEVEL") {
+        statusText = "Se perdió la conexión con el servidor.";
         stopNet();
         screen = "TITLE";
       }
     }
   });
+  // El relay se duerme sin uso: se reintenta durante 60 s antes de rendirse.
+  onlineLink.retryMs = 60000;
   onlineLink.createRoom();
 }
 function joinOnline(code) {
-  statusText = `Conectando a la sala ${code}...`;
+  statusText = "Despertando al servidor, espera...";
   engine = new Engine("ONLINE_CLIENT", "aqua", "yani", 1);
   pendingMode = "ONLINE_CLIENT";
   onlineLink = new RelayLink({
+    onRetrying: secs => {
+      statusText = `Despertando al servidor, espera... (reintentando, ${secs} s)`;
+    },
     onSnapshot: snap => {
       if (screen === "CLIENT_WAIT") {
         ensureClientEngine(snap);
@@ -2675,7 +2820,9 @@ function joinOnline(code) {
       }
     },
     onDialogueAdvance: () => {},
-    onJoined: () => {},
+    onJoined: () => {
+      if (screen === "CLIENT_WAIT") statusText = "Conectado. Esperando a que el anfitrión empiece...";
+    },
     onJoinFailed: reason => {
       statusText = reason === "NO_ROOM"
         ? `No existe la sala ${code}, revisa el código`
@@ -2684,13 +2831,22 @@ function joinOnline(code) {
       screen = "ONLINE_JOIN";
     },
     onDisconnected: () => {
-      if (screen === "PLAYING" || screen === "CLIENT_WAIT" || screen === "SELECT" || screen === "ONLINE_JOIN") {
+      const entro = !!(onlineLink && onlineLink.established);
+      if (!entro && (screen === "SELECT" || screen === "CLIENT_WAIT" || screen === "ONLINE_JOIN")) {
+        // Nunca se pudo entrar: error claro en la pantalla del código,
+        // nada de regresar al menú en silencio.
+        stopNet();
+        statusText = "No se pudo conectar con el servidor. Revisa tu internet e inténtalo de nuevo.";
+        screen = "ONLINE_JOIN";
+      } else if (screen === "PLAYING" || screen === "CLIENT_WAIT" || screen === "SELECT" || screen === "ONLINE_JOIN") {
         statusText = "Se perdió la conexión con el servidor.";
         stopNet();
         screen = "TITLE";
       }
     }
   });
+  // El relay se duerme sin uso: se reintenta durante 60 s antes de rendirse.
+  onlineLink.retryMs = 60000;
   onlineLink.joinRoom(code);
   screen = "SELECT";
 }
@@ -2819,6 +2975,7 @@ function tick() {
 // -- toques de menú --
 function onMenuTap(id) {
   ensureMusic();
+  if (id === "single" || id === "coop" || id === "multi" || id === "howto") statusText = "";
   if (id === "single") { pendingMode = "SINGLE"; choosingP2 = false; screen = "SELECT"; }
   else if (id === "coop") { pendingMode = "COOP_LOCAL"; choosingP2 = false; screen = "SELECT"; }
   else if (id === "multi") { screen = "MULTI"; }
@@ -3020,6 +3177,7 @@ function render() {
   ctx.fillStyle = "rgb(12,10,18)";
   ctx.fillRect(0, 0, viewW, viewH);
   if (!assetsReady) { drawLoading(); return; }
+  loadVideo("intro"); // la cinemática de título se carga en segundo plano
   FIT_VIEW = screen !== "PLAYING" && screen !== "PAUSED";
   switch (screen) {
     case "TITLE": drawTitle(); break;
