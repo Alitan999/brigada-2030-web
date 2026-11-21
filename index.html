@@ -1,0 +1,3066 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="icon" href="data:,">
+<title>Brigada 2030 — Web</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden; background: #0c0a12;
+    overscroll-behavior: none; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; }
+  #giro {
+    display: none; position: fixed; left: 50%; top: max(10px, env(safe-area-inset-top));
+    transform: translateX(-50%); z-index: 5; pointer-events: none;
+    background: rgba(18, 26, 48, .92); color: #fff; border: 2px solid rgb(90, 150, 210);
+    border-radius: 10px; padding: 7px 12px; font-size: 13px; text-align: center;
+    white-space: nowrap; max-width: 94vw;
+  }
+  @media (orientation: portrait) and (max-width: 700px) {
+    #giro { display: block; }
+  }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="giro">Gira tu teléfono a horizontal</div>
+<section class="sr-only" aria-label="Descripción del juego">
+  <h1>Brigada 2030: El Pozo del Tiempo</h1>
+  <p>Juego de plataformas sobre el cuidado del agua, hecho por alumnos del CECyTEG Tarandacuao para el Reto JAPAMI. Todo el juego se dibuja en el lienzo de arriba: los menús y los controles son botones táctiles sobre la pantalla.</p>
+  <h2>Cómo jugar</h2>
+  <p>Elige 1 jugador o 2 jugadores en el mismo teléfono, después tu personaje (Aqua o Yani) y el nivel. Hay 3 niveles: En busca del agua, El futuro contaminado y La planta de la H2O Company. Mueve al personaje con las flechas en pantalla, salta con el botón SALTO (dos toques en el aire para el doble salto), dispara bolas de agua con DISPARO y corre con CORRER. Recoge gotas: cada 10 te devuelven un corazón. Al final de cada nivel te espera un jefe: Corvo, el Jefe de Basura y el Empresario.</p>
+  <h2>Multijugador online</h2>
+  <p>En Multijugador Online, un jugador crea la sala y recibe un código BR-1234; el otro entra con ese código. Las salas son las mismas de la app de Android, así que un iPhone y un Android pueden jugar juntos en la misma partida. El anfitrión corre el juego y el invitado manda sus teclas.</p>
+</section>
+<script>
+"use strict";
+/* =========================================================================
+   Brigada 2030: El Pozo del Tiempo — versión web (Safari / iPhone)
+   Puerto fiel del motor Android v1.2.0 (Kotlin) y del original Python.
+   Multijugador online con EL MISMO protocolo de la APK: mensajes de texto
+   por WebSocket contra el servidor relay (CREATE / JOIN BR-#### / IN /
+   SN| / CH / DA). El anfitrión simula y manda instantáneas; el invitado
+   manda sus teclas. Web y Android juegan en las mismas salas.
+   ========================================================================= */
+
+// Dirección del servidor relay online (desplegado en Bonto, wss puerto
+// 443 con TLS; el mismo relay al que se conecta la APK). Vive en UNA sola
+// constante: si el host cambia, se cambia solo aquí.
+// Nota: Bonto se duerme tras 15 min sin uso y despierta en ~2 s al
+// conectar; la conexión espera hasta 60 s, igual que la APK.
+const RELAY_HOST = "brigada-online-server.bonto.page";
+const RELAY_URL = "wss://" + RELAY_HOST;
+
+// ---------------------------------------------------------------------------
+// Utilidades
+// ---------------------------------------------------------------------------
+/** Redondeo como el round() de Python (la mitad va al número par). */
+function rpe(v) {
+  const f = Math.floor(v);
+  const d = v - f;
+  if (d > 0.5) return f + 1;
+  if (d < 0.5) return f;
+  return (f % 2 === 0) ? f : f + 1;
+}
+/** Entero aleatorio [a, b) como el nextInt(a, b) de Kotlin. */
+function rndInt(a, b) { return a + Math.floor(Math.random() * (b - a)); }
+const clamp = (v, a, b) => Math.max(a, Math.min(v, b));
+
+class RectF {
+  constructor(x, y, w, h) { this.x = x; this.y = y; this.w = w; this.h = h; }
+  get left() { return this.x; }
+  get top() { return this.y; }
+  get right() { return this.x + this.w; }
+  get bottom() { return this.y + this.h; }
+  get centerX() { return this.x + this.w / 2; }
+  get centerY() { return this.y + this.h / 2; }
+  intersects(o) { return this.x < o.x + o.w && this.x + this.w > o.x && this.y < o.y + o.h && this.y + this.h > o.y; }
+}
+const RF = a => new RectF(a[0], a[1], a[2], a[3]);
+
+function newInput() {
+  return { left: false, right: false, down: false, run: false, jumpPressed: false, shootPressed: false };
+}
+function clearEdges(i) { i.jumpPressed = false; i.shootPressed = false; }
+function copyInput(i) { return { left: i.left, right: i.right, down: i.down, run: i.run, jumpPressed: i.jumpPressed, shootPressed: i.shootPressed }; }
+
+// ---------------------------------------------------------------------------
+// Constantes de física y juego (juego/ajustes.py vía LevelData.kt)
+// ---------------------------------------------------------------------------
+const C = {
+  ANCHO_MUNDO: 1280, ALTO_MUNDO: 720,
+  GRAVEDAD: 0.62, CAIDA_MAXIMA: 18,
+  VELOCIDAD: 4.2, VELOCIDAD_CORRER: 7.0, VELOCIDAD_AGACHADO: 2.4,
+  FUERZA_SALTO: 15.0, FUERZA_SALTO_DOBLE: 12.5, SALTOS_MAXIMOS: 2,
+  VIDAS: 5, INVULNERABLE: 90,
+  ANCHO_JUGADOR: 46, ALTO_JUGADOR: 112, ALTO_AGACHADO: 72,
+  RECARGA_DISPARO: 22, VELOCIDAD_BOLA: 11.0, ALCANCE_BOLA: 620,
+  VELOCIDAD_ENEMIGO: 1.5, ESPERA_ATAQUE_MIN: 150, ESPERA_ATAQUE_MAX: 260,
+  ALCANCE_ATAQUE_ENEMIGO: 520,
+  VIDA_JEFE_CORVO: 8, CORVO_ALTURA: 95, CORVO_AVISO: 46, CORVO_CANSANCIO: 110,
+  CORVO_DESCANSO_MIN: 80, CORVO_DESCANSO_MAX: 120,
+  VIDA_JEFE_BASURA: 14, VELOCIDAD_JEFE: 2.0, ALCANCE_LANZAMIENTO_JEFE: 4.6,
+  FUERZA_SALTO_JEFE: 15.0, ESCALA_JEFE: 1.9,
+  VIDA_JEFE_FINAL: 26, VELOCIDAD_JEFE_FINAL: 3.2,
+  ESPERA_ATAQUE_JEFE_MIN: 55, ESPERA_ATAQUE_JEFE_MAX: 95, DANO_JEFE_FINAL: 2,
+  VELOCIDAD_HUIDA: 4.6, DANO_BOMBA: 1, VIDA_PELIGRO: 2,
+  DANO_PUAS: 1, DANO_RIO: 1, DANO_ENEMIGO: 1
+};
+
+/** Tamaño del proyectil enemigo según su imagen (medido del original). */
+function proyectilTamano(nombre, escala) {
+  if (nombre === "barril_verde_contaminado") return [37, 60];
+  if (nombre === "garrafon_h2o_chico") return escala > 0.7 ? [53, 76] : [37, 54];
+  if (nombre === "charco_agua_contaminada") return [74, 29];
+  return [102, 49]; // basura_toxica
+}
+
+// ---------------------------------------------------------------------------
+// Datos de los 3 niveles (generados desde LevelData.kt / LevelData23.kt,
+// que a su vez salen del Python original: mismas cajas de choque exactas)
+// ---------------------------------------------------------------------------
+const LEVELS = {"1": {"numero": 1, "rotulo": "NIVEL 1  ·  EN BUSCA DEL AGUA", "musica": "1_inicio", "largo": 7400, "sueloY": 560, "rioTop": 634, "inicioX": 120, "arenaIzq": 6700, "arenaDer": 7340, "jefeX": 7120, "jefeTipo": "CORVO", "fondo": "CAMPO", "pozoX": 7150, "plataformas": [{"x": 0, "y": 560, "imagen": "puente_a", "solido": [4.0, 560.0, 332.0, 300.0]}, {"x": 406, "y": 530, "imagen": "andamio_a", "solido": [406.0, 530.0, 247.0, 300.0]}, {"x": 720, "y": 560, "imagen": "puente_b", "solido": [723.0, 560.0, 307.0, 300.0]}, {"x": 1100, "y": 500, "imagen": "andamio_b", "solido": [1100.0, 500.0, 232.0, 300.0]}, {"x": 1398, "y": 540, "imagen": "puente_a", "solido": [1402.0, 540.0, 332.0, 300.0]}, {"x": 1804, "y": 560, "imagen": "andamio_a", "solido": [1804.0, 560.0, 247.0, 300.0]}, {"x": 2118, "y": 510, "imagen": "puente_b", "solido": [2121.0, 510.0, 307.0, 300.0]}, {"x": 2498, "y": 560, "imagen": "andamio_b", "solido": [2498.0, 560.0, 232.0, 300.0]}, {"x": 2796, "y": 530, "imagen": "puente_a", "solido": [2800.0, 530.0, 332.0, 300.0]}, {"x": 3202, "y": 560, "imagen": "andamio_a", "solido": [3202.0, 560.0, 247.0, 300.0]}, {"x": 3516, "y": 500, "imagen": "puente_b", "solido": [3519.0, 500.0, 307.0, 300.0]}, {"x": 3896, "y": 540, "imagen": "andamio_b", "solido": [3896.0, 540.0, 232.0, 300.0]}, {"x": 4194, "y": 560, "imagen": "puente_a", "solido": [4198.0, 560.0, 332.0, 300.0]}, {"x": 4600, "y": 520, "imagen": "andamio_a", "solido": [4600.0, 520.0, 247.0, 300.0]}, {"x": 4914, "y": 560, "imagen": "puente_b", "solido": [4917.0, 560.0, 307.0, 300.0]}, {"x": 5294, "y": 540, "imagen": "andamio_b", "solido": [5294.0, 540.0, 232.0, 300.0]}, {"x": 5592, "y": 560, "imagen": "puente_a", "solido": [5596.0, 560.0, 332.0, 300.0]}, {"x": 5998, "y": 530, "imagen": "andamio_a", "solido": [5998.0, 530.0, 247.0, 300.0]}, {"x": 6312, "y": 560, "imagen": "puente_b", "solido": [6315.0, 560.0, 307.0, 300.0]}, {"x": 6692, "y": 560, "imagen": "andamio_b", "solido": [6692.0, 560.0, 232.0, 300.0]}, {"x": 6700, "y": 560, "imagen": "puente_a", "solido": [6704.0, 560.0, 332.0, 300.0]}, {"x": 7030, "y": 560, "imagen": "puente_a", "solido": [7034.0, 560.0, 332.0, 300.0]}, {"x": 7360, "y": 560, "imagen": "puente_a", "solido": [7364.0, 560.0, 332.0, 300.0]}], "unaVia": [], "obstaculos": [], "puas": [{"x": 801, "imagen": "pinchos_chicos", "caja": [825.0, 539.0, 102.0, 26.0], "imgW": 150, "imgH": 53, "imgY": 513}, {"x": 2881, "imagen": "pinchos_caja", "caja": [2905.0, 483.0, 122.0, 52.0], "imgW": 170, "imgH": 105, "imgY": 431}, {"x": 4995, "imagen": "pinchos_chicos", "caja": [5019.0, 539.0, 102.0, 26.0], "imgW": 150, "imgH": 53, "imgY": 513}], "bombas": [], "adornos": [{"x": 22, "y": 560, "imagen": "caja_a", "delante": false}, {"x": 741, "y": 560, "imagen": "caja_b", "delante": false}, {"x": 1420, "y": 540, "imagen": "cerca", "delante": false}, {"x": 2139, "y": 510, "imagen": "tronco_b", "delante": false}, {"x": 2818, "y": 530, "imagen": "reciclaje_a", "delante": false}, {"x": 3537, "y": 500, "imagen": "reciclaje_b", "delante": false}, {"x": 4216, "y": 560, "imagen": "tronco_a", "delante": false}, {"x": 4935, "y": 560, "imagen": "caja_a", "delante": false}, {"x": 5614, "y": 560, "imagen": "caja_b", "delante": false}, {"x": 6333, "y": 560, "imagen": "cerca", "delante": false}, {"x": 900, "y": 740, "imagen": "mata_der", "delante": true}, {"x": 2800, "y": 740, "imagen": "mata_izq", "delante": true}, {"x": 4700, "y": 740, "imagen": "mata_der", "delante": true}, {"x": 6600, "y": 740, "imagen": "mata_izq", "delante": true}], "flotantes": [{"x": 260, "y": 640, "imagen": "alga_a", "delante": true}, {"x": 880, "y": 640, "imagen": "llanta_rama", "delante": true}, {"x": 1500, "y": 640, "imagen": "alga_b", "delante": true}, {"x": 2120, "y": 640, "imagen": "piedra", "delante": true}, {"x": 2740, "y": 640, "imagen": "alga_c", "delante": true}, {"x": 3360, "y": 640, "imagen": "alga_a", "delante": true}, {"x": 3980, "y": 640, "imagen": "llanta_rama", "delante": true}, {"x": 4600, "y": 640, "imagen": "alga_b", "delante": true}, {"x": 5220, "y": 640, "imagen": "piedra", "delante": true}, {"x": 5840, "y": 640, "imagen": "alga_c", "delante": true}, {"x": 6460, "y": 640, "imagen": "alga_a", "delante": true}], "enemigos": [{"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 1216, "izquierda": 1145, "derecha": 1287}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 2274, "izquierda": 2166, "derecha": 2383}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 3325, "izquierda": 3247, "derecha": 3404}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 4364, "izquierda": 4243, "derecha": 4485}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 5410, "izquierda": 5339, "derecha": 5481}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 6468, "izquierda": 6360, "derecha": 6577}], "gotas": [{"x": 87, "y": 502}, {"x": 170, "y": 502}, {"x": 253, "y": 502}, {"x": 492, "y": 472}, {"x": 566, "y": 472}, {"x": 799, "y": 502}, {"x": 876, "y": 502}, {"x": 953, "y": 502}, {"x": 1181, "y": 442}, {"x": 1250, "y": 442}, {"x": 1485, "y": 482}, {"x": 1568, "y": 482}, {"x": 1651, "y": 482}, {"x": 1890, "y": 502}, {"x": 1964, "y": 502}, {"x": 2197, "y": 452}, {"x": 2274, "y": 452}, {"x": 2351, "y": 452}, {"x": 2579, "y": 502}, {"x": 2648, "y": 502}, {"x": 2883, "y": 472}, {"x": 2966, "y": 472}, {"x": 3049, "y": 472}, {"x": 3288, "y": 502}, {"x": 3362, "y": 502}, {"x": 3595, "y": 442}, {"x": 3672, "y": 442}, {"x": 3749, "y": 442}, {"x": 3977, "y": 482}, {"x": 4046, "y": 482}, {"x": 4281, "y": 502}, {"x": 4364, "y": 502}, {"x": 4447, "y": 502}, {"x": 4686, "y": 462}, {"x": 4760, "y": 462}, {"x": 4993, "y": 502}, {"x": 5070, "y": 502}, {"x": 5147, "y": 502}, {"x": 5375, "y": 482}, {"x": 5444, "y": 482}, {"x": 5679, "y": 502}, {"x": 5762, "y": 502}, {"x": 5845, "y": 502}, {"x": 6084, "y": 472}, {"x": 6158, "y": 472}, {"x": 6391, "y": 502}, {"x": 6468, "y": 502}, {"x": 6545, "y": 502}, {"x": 6773, "y": 502}, {"x": 6842, "y": 502}, {"x": 371, "y": 380}, {"x": 1065, "y": 350}, {"x": 1769, "y": 390}, {"x": 2463, "y": 360}, {"x": 3167, "y": 380}, {"x": 3861, "y": 350}, {"x": 4565, "y": 370}, {"x": 5259, "y": 390}, {"x": 5963, "y": 380}, {"x": 6657, "y": 410}], "puntosSeguros": [60, 466, 780, 1160, 1458, 1864, 2178, 2558, 2856, 3262, 3576, 3956, 4254, 4660, 4974, 5354, 5652, 6058, 6372, 6752, 6760, 7090, 7420], "burbujas": [], "humo": [], "dialogoInicio": [{"quien": "heroe", "nombre": "", "frase": "Tercer día sin agua en la casa. Mi mamá ya no sabe qué hacer."}, {"quien": "heroe", "nombre": "", "frase": "Las tomas de la colonia llevan semanas secas."}, {"quien": "heroe", "nombre": "", "frase": "Mi hermanita tiene sed y yo no tengo nada que darle."}, {"quien": "heroe", "nombre": "", "frase": "Hasta el río que cruza el pueblo bajó podrido."}, {"quien": "heroe", "nombre": "", "frase": "Dicen que cruzando el campo todavía queda un pozo con agua."}, {"quien": "heroe", "nombre": "", "frase": "Si lleno aunque sea una botella, hoy sí tomamos todos."}], "dialogoEncuentro": [{"quien": "heroe", "nombre": "", "frase": "Ahí está... el pozo. Y todavía tiene agua."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Alto ahí. No des un paso más hacia ese pozo."}, {"quien": "heroe", "nombre": "", "frase": "¿Un cuervo... hablando?"}, {"quien": "corvo", "nombre": "CORVO", "frase": "Ese pozo no está para llenar botellas. Da media vuelta."}, {"quien": "heroe", "nombre": "", "frase": "Mi familia lleva tres días sin agua. No me voy a ir."}, {"quien": "heroe", "nombre": "", "frase": "Hice todo este camino por ellos."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Y yo llevo más tiempo del que crees cuidando esta agua."}, {"quien": "corvo", "nombre": "CORVO", "frase": "No puedo dejar que te la lleves. No así."}, {"quien": "heroe", "nombre": "", "frase": "Entonces vamos a tener que pelear por ella."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Eso parece. Veamos cuánto aguantas."}], "dialogoMascara": [], "dialogoFinal": [{"quien": "corvo", "nombre": "CORVO", "frase": "Espera... baja los puños. Ya entendí."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Peleaste así por tu familia, no por ganarme."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Me llamo Corvo. No soy un animal de este tiempo."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Soy un cuervo de agua, y vengo del año 2030."}, {"quien": "heroe", "nombre": "", "frase": "¿Del futuro? ¿Y por qué cuidabas tanto este pozo?"}, {"quien": "corvo", "nombre": "CORVO", "frase": "Porque es lo último que conecta los dos tiempos."}, {"quien": "corvo", "nombre": "CORVO", "frase": "En mi época no queda agua limpia. Ni una gota."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Hay miles de familias como la tuya, pero ya sin pozo."}, {"quien": "heroe", "nombre": "", "frase": "Entonces no me atacabas... me estabas probando."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Necesitaba saber si aguantarías lo que te voy a enseñar."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Llévate el agua para los tuyos. Te lo ganaste."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Pero antes ven conmigo. Tienes que verlo con tus ojos."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Sujétate fuerte. El pozo nos va a llevar al 2030."}], "superficies": [{"left": 4, "right": 336, "y": 560}, {"left": 406, "right": 653, "y": 530}, {"left": 723, "right": 1030, "y": 560}, {"left": 1100, "right": 1332, "y": 500}, {"left": 1402, "right": 1734, "y": 540}, {"left": 1804, "right": 2051, "y": 560}, {"left": 2121, "right": 2428, "y": 510}, {"left": 2498, "right": 2730, "y": 560}, {"left": 2800, "right": 3132, "y": 530}, {"left": 3202, "right": 3449, "y": 560}, {"left": 3519, "right": 3826, "y": 500}, {"left": 3896, "right": 4128, "y": 540}, {"left": 4198, "right": 4530, "y": 560}, {"left": 4600, "right": 4847, "y": 520}, {"left": 4917, "right": 5224, "y": 560}, {"left": 5294, "right": 5526, "y": 540}, {"left": 5596, "right": 5928, "y": 560}, {"left": 5998, "right": 6245, "y": 530}, {"left": 6315, "right": 6622, "y": 560}, {"left": 6692, "right": 6924, "y": 560}, {"left": 6704, "right": 7036, "y": 560}, {"left": 7034, "right": 7366, "y": 560}, {"left": 7364, "right": 7696, "y": 560}]}, "2": {"numero": 2, "rotulo": "NIVEL 2  ·  EL FUTURO CONTAMINADO", "musica": "2_desarrollo", "largo": 9000, "sueloY": 580, "rioTop": 656, "inicioX": 120, "arenaIzq": 8260, "arenaDer": 8940, "jefeX": 8600, "jefeTipo": "BASURA", "fondo": "TOXICO", "pozoX": 0, "plataformas": [{"x": 0, "y": 580, "imagen": "plataforma_larga", "solido": [2.0, 580.0, 434.0, 300.0]}, {"x": 504, "y": 560, "imagen": "plataforma_b", "solido": [506.0, 560.0, 258.0, 300.0]}, {"x": 832, "y": 520, "imagen": "plataforma_larga", "solido": [834.0, 520.0, 434.0, 300.0]}, {"x": 1336, "y": 580, "imagen": "plataforma_b", "solido": [1338.0, 580.0, 258.0, 300.0]}, {"x": 1664, "y": 540, "imagen": "plataforma_larga", "solido": [1666.0, 540.0, 434.0, 300.0]}, {"x": 2168, "y": 580, "imagen": "plataforma_b", "solido": [2170.0, 580.0, 258.0, 300.0]}, {"x": 2496, "y": 520, "imagen": "plataforma_larga", "solido": [2498.0, 520.0, 434.0, 300.0]}, {"x": 3000, "y": 580, "imagen": "plataforma_b", "solido": [3002.0, 580.0, 258.0, 300.0]}, {"x": 3328, "y": 540, "imagen": "plataforma_larga", "solido": [3330.0, 540.0, 434.0, 300.0]}, {"x": 3832, "y": 580, "imagen": "plataforma_b", "solido": [3834.0, 580.0, 258.0, 300.0]}, {"x": 4160, "y": 520, "imagen": "plataforma_larga", "solido": [4162.0, 520.0, 434.0, 300.0]}, {"x": 4664, "y": 580, "imagen": "plataforma_b", "solido": [4666.0, 580.0, 258.0, 300.0]}, {"x": 4992, "y": 540, "imagen": "plataforma_larga", "solido": [4994.0, 540.0, 434.0, 300.0]}, {"x": 5496, "y": 580, "imagen": "plataforma_b", "solido": [5498.0, 580.0, 258.0, 300.0]}, {"x": 5824, "y": 520, "imagen": "plataforma_larga", "solido": [5826.0, 520.0, 434.0, 300.0]}, {"x": 6328, "y": 580, "imagen": "plataforma_b", "solido": [6330.0, 580.0, 258.0, 300.0]}, {"x": 6656, "y": 540, "imagen": "plataforma_larga", "solido": [6658.0, 540.0, 434.0, 300.0]}, {"x": 7160, "y": 580, "imagen": "plataforma_b", "solido": [7162.0, 580.0, 258.0, 300.0]}, {"x": 7488, "y": 560, "imagen": "plataforma_larga", "solido": [7490.0, 560.0, 434.0, 300.0]}, {"x": 7992, "y": 560, "imagen": "plataforma_b", "solido": [7994.0, 560.0, 258.0, 300.0]}, {"x": 8260, "y": 560, "imagen": "plataforma_larga", "solido": [8262.0, 560.0, 434.0, 300.0]}, {"x": 8640, "y": 560, "imagen": "plataforma_larga", "solido": [8642.0, 560.0, 434.0, 300.0]}], "unaVia": [{"x": 381, "y": 420, "imagen": "plataforma_corta", "solido": [381.0, 420.0, 179.0, 22.0]}, {"x": 1213, "y": 380, "imagen": "plataforma_corta", "solido": [1213.0, 380.0, 179.0, 22.0]}, {"x": 2045, "y": 400, "imagen": "plataforma_corta", "solido": [2045.0, 400.0, 179.0, 22.0]}, {"x": 2877, "y": 380, "imagen": "plataforma_corta", "solido": [2877.0, 380.0, 179.0, 22.0]}, {"x": 3709, "y": 400, "imagen": "plataforma_corta", "solido": [3709.0, 400.0, 179.0, 22.0]}, {"x": 4541, "y": 380, "imagen": "plataforma_corta", "solido": [4541.0, 380.0, 179.0, 22.0]}, {"x": 5373, "y": 400, "imagen": "plataforma_corta", "solido": [5373.0, 400.0, 179.0, 22.0]}, {"x": 6205, "y": 380, "imagen": "plataforma_corta", "solido": [6205.0, 380.0, 179.0, 22.0]}, {"x": 7037, "y": 400, "imagen": "plataforma_corta", "solido": [7037.0, 400.0, 179.0, 22.0]}, {"x": 7869, "y": 420, "imagen": "plataforma_corta", "solido": [7869.0, 420.0, 179.0, 22.0]}], "obstaculos": [{"x": 2540, "y": 396, "imagen": "toxico", "solido": [2552.0, 428.0, 65.0, 130.0]}, {"x": 5039, "y": 451, "imagen": "bote", "solido": [5051.0, 474.0, 58.0, 95.0]}, {"x": 7511, "y": 456, "imagen": "charco_toxico", "solido": [7523.0, 483.0, 106.0, 110.0]}], "puas": [{"x": 996, "imagen": "puas", "caja": [1020.0, 511.0, 62.0, 12.0], "imgW": 110, "imgH": 25, "imgY": 499}, {"x": 3502, "imagen": "puas_b", "caja": [3526.0, 517.0, 42.0, 26.0], "imgW": 90, "imgH": 53, "imgY": 491}, {"x": 5988, "imagen": "puas", "caja": [6012.0, 511.0, 62.0, 12.0], "imgW": 110, "imgH": 25, "imgY": 499}, {"x": 1733, "imagen": "puas_techo", "caja": [1753.0, 324.0, 260.0, 121.0], "imgW": 300, "imgH": 242, "imgY": 203}, {"x": 4229, "imagen": "puas_techo", "caja": [4249.0, 304.0, 260.0, 121.0], "imgW": 300, "imgH": 242, "imgY": 183}, {"x": 6725, "imagen": "puas_techo", "caja": [6745.0, 324.0, 260.0, 121.0], "imgW": 300, "imgH": 242, "imgY": 203}], "bombas": [{"x": 2730, "y": 439, "w": 57, "h": 85}, {"x": 5226, "y": 459, "w": 57, "h": 85}, {"x": 7722, "y": 479, "w": 57, "h": 85}], "adornos": [{"x": 16, "y": 580, "imagen": "senaletica", "delante": false}, {"x": 520, "y": 560, "imagen": "llanta", "delante": false}, {"x": 848, "y": 520, "imagen": "cubo", "delante": false}, {"x": 1352, "y": 580, "imagen": "humo", "delante": false}, {"x": 1680, "y": 540, "imagen": "caja_fuerte", "delante": false}, {"x": 2184, "y": 580, "imagen": "fuente", "delante": false}, {"x": 2512, "y": 520, "imagen": "fuente_b", "delante": false}, {"x": 3016, "y": 580, "imagen": "senaletica", "delante": false}, {"x": 3344, "y": 540, "imagen": "llanta", "delante": false}, {"x": 3848, "y": 580, "imagen": "cubo", "delante": false}, {"x": 4176, "y": 520, "imagen": "humo", "delante": false}, {"x": 4680, "y": 580, "imagen": "caja_fuerte", "delante": false}, {"x": 5008, "y": 540, "imagen": "fuente", "delante": false}, {"x": 5512, "y": 580, "imagen": "fuente_b", "delante": false}, {"x": 5840, "y": 520, "imagen": "senaletica", "delante": false}, {"x": 6344, "y": 580, "imagen": "llanta", "delante": false}, {"x": 6672, "y": 540, "imagen": "cubo", "delante": false}, {"x": 7176, "y": 580, "imagen": "humo", "delante": false}, {"x": 7504, "y": 560, "imagen": "caja_fuerte", "delante": false}, {"x": 8008, "y": 560, "imagen": "fuente", "delante": false}], "flotantes": [], "enemigos": [{"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 1467, "izquierda": 1388, "derecha": 1546}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 3131, "izquierda": 3052, "derecha": 3210}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 4795, "izquierda": 4716, "derecha": 4874}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 6459, "izquierda": 6380, "derecha": 6538}, {"paquete": "monstruo", "proyectil": "basura_toxica", "carpetaProyectil": "nivel", "escalaProyectil": 0.55, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 8123, "izquierda": 8044, "derecha": 8202}], "gotas": [{"x": 110, "y": 520}, {"x": 219, "y": 520}, {"x": 327, "y": 520}, {"x": 583, "y": 500}, {"x": 686, "y": 500}, {"x": 942, "y": 460}, {"x": 1051, "y": 460}, {"x": 1159, "y": 460}, {"x": 1415, "y": 520}, {"x": 1518, "y": 520}, {"x": 1774, "y": 480}, {"x": 1883, "y": 480}, {"x": 1991, "y": 480}, {"x": 2247, "y": 520}, {"x": 2350, "y": 520}, {"x": 2606, "y": 460}, {"x": 2715, "y": 460}, {"x": 2823, "y": 460}, {"x": 3079, "y": 520}, {"x": 3182, "y": 520}, {"x": 3438, "y": 480}, {"x": 3547, "y": 480}, {"x": 3655, "y": 480}, {"x": 3911, "y": 520}, {"x": 4014, "y": 520}, {"x": 4270, "y": 460}, {"x": 4379, "y": 460}, {"x": 4487, "y": 460}, {"x": 4743, "y": 520}, {"x": 4846, "y": 520}, {"x": 5102, "y": 480}, {"x": 5211, "y": 480}, {"x": 5319, "y": 480}, {"x": 5575, "y": 520}, {"x": 5678, "y": 520}, {"x": 5934, "y": 460}, {"x": 6043, "y": 460}, {"x": 6151, "y": 460}, {"x": 6407, "y": 520}, {"x": 6510, "y": 520}, {"x": 6766, "y": 480}, {"x": 6875, "y": 480}, {"x": 6983, "y": 480}, {"x": 7239, "y": 520}, {"x": 7342, "y": 520}, {"x": 7598, "y": 500}, {"x": 7707, "y": 500}, {"x": 7815, "y": 500}, {"x": 8071, "y": 500}, {"x": 8174, "y": 500}, {"x": 431, "y": 370}, {"x": 511, "y": 370}, {"x": 1263, "y": 330}, {"x": 1343, "y": 330}, {"x": 2095, "y": 350}, {"x": 2175, "y": 350}, {"x": 2927, "y": 330}, {"x": 3007, "y": 330}, {"x": 3759, "y": 350}, {"x": 3839, "y": 350}, {"x": 4591, "y": 330}, {"x": 4671, "y": 330}, {"x": 5423, "y": 350}, {"x": 5503, "y": 350}, {"x": 6255, "y": 330}, {"x": 6335, "y": 330}, {"x": 7087, "y": 350}, {"x": 7167, "y": 350}, {"x": 7919, "y": 370}, {"x": 7999, "y": 370}], "puntosSeguros": [50, 554, 882, 1386, 1714, 2218, 2546, 3050, 3378, 3882, 4210, 4714, 5042, 5546, 5874, 6378, 6706, 7210, 7538, 8042, 8310, 8690], "superficies": [{"left": 0, "right": 440, "y": 580}, {"left": 504, "right": 764, "y": 560}, {"left": 832, "right": 1272, "y": 520}, {"left": 1336, "right": 1596, "y": 580}, {"left": 1664, "right": 2104, "y": 540}, {"left": 2168, "right": 2428, "y": 580}, {"left": 2496, "right": 2936, "y": 520}, {"left": 3000, "right": 3260, "y": 580}, {"left": 3328, "right": 3768, "y": 540}, {"left": 3832, "right": 4092, "y": 580}, {"left": 4160, "right": 4600, "y": 520}, {"left": 4664, "right": 4924, "y": 580}, {"left": 4992, "right": 5432, "y": 540}, {"left": 5496, "right": 5756, "y": 580}, {"left": 5824, "right": 6264, "y": 520}, {"left": 6328, "right": 6588, "y": 580}, {"left": 6656, "right": 7096, "y": 540}, {"left": 7160, "right": 7420, "y": 580}, {"left": 7488, "right": 7928, "y": 560}, {"left": 7992, "right": 8252, "y": 560}, {"left": 8260, "right": 8700, "y": 560}, {"left": 8640, "right": 9080, "y": 560}], "burbujas": [200, 1032, 1864, 2696, 3528, 4360, 5192, 6024, 6856, 7688], "humo": [], "dialogoInicio": [{"quien": "corvo", "nombre": "CORVO", "frase": "Bienvenido al año 2030. Así quedó Irapuato."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Las fábricas tiraron sus desechos al drenaje durante años."}, {"quien": "heroe", "nombre": "", "frase": "El río... ya no es río. Es veneno corriendo."}, {"quien": "corvo", "nombre": "CORVO", "frase": "No toques el agua. Ya no perdona."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Salta de columna en columna y junta cada gota limpia."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Al final del camino hay algo muy grande. Ten cuidado."}], "dialogoEncuentro": [], "dialogoMascara": [], "dialogoFinal": [{"quien": "heroe", "nombre": "", "frase": "Es... demasiado grande. No puedo contra él."}, {"quien": "corvo", "nombre": "CORVO", "frase": "No te levantes. Esta pelea no era para ganarla."}, {"quien": "corvo", "nombre": "CORVO", "frase": "¡Te tengo! ¡Sujétate fuerte!"}, {"quien": "corvo", "nombre": "CORVO", "frase": "Volvamos al presente, donde todavía hay algo que salvar."}, {"quien": "heroe", "nombre": "", "frase": "Si el agua se cuida hoy, este futuro nunca va a existir."}]}, "3": {"numero": 3, "rotulo": "NIVEL 3  ·  LA PLANTA DE LA H2O COMPANY", "musica": "3_final", "largo": 8800, "sueloY": 560, "rioTop": 654, "inicioX": 120, "arenaIzq": 7300, "arenaDer": 8640, "jefeX": 7800, "jefeTipo": "EMPRESARIO", "fondo": "PLANTA", "pozoX": 0, "plataformas": [{"x": 0, "y": 560, "imagen": "plataforma_rejilla_metal", "solido": [0.0, 560.0, 461.0, 300.0]}, {"x": 527, "y": 530, "imagen": "pasarela_metal_barandal", "solido": [531.0, 530.0, 372.0, 300.0]}, {"x": 972, "y": 560, "imagen": "viga_metal_larga_02", "solido": [973.0, 560.0, 448.0, 300.0]}, {"x": 1484, "y": 500, "imagen": "pasarela_metal_barandal_roto", "solido": [1491.0, 500.0, 454.0, 300.0]}, {"x": 2015, "y": 540, "imagen": "viga_metal_mediana", "solido": [2015.0, 540.0, 260.0, 300.0]}, {"x": 2345, "y": 560, "imagen": "plataforma_rejilla_metal", "solido": [2345.0, 560.0, 461.0, 300.0]}, {"x": 2872, "y": 510, "imagen": "pasarela_metal_barandal", "solido": [2876.0, 510.0, 372.0, 300.0]}, {"x": 3317, "y": 560, "imagen": "viga_metal_larga_02", "solido": [3318.0, 560.0, 448.0, 300.0]}, {"x": 3829, "y": 530, "imagen": "pasarela_metal_barandal_roto", "solido": [3836.0, 530.0, 454.0, 300.0]}, {"x": 4360, "y": 560, "imagen": "viga_metal_mediana", "solido": [4360.0, 560.0, 260.0, 300.0]}, {"x": 4690, "y": 500, "imagen": "plataforma_rejilla_metal", "solido": [4690.0, 500.0, 461.0, 300.0]}, {"x": 5217, "y": 540, "imagen": "pasarela_metal_barandal", "solido": [5221.0, 540.0, 372.0, 300.0]}, {"x": 5662, "y": 560, "imagen": "viga_metal_larga_02", "solido": [5663.0, 560.0, 448.0, 300.0]}, {"x": 6174, "y": 520, "imagen": "pasarela_metal_barandal_roto", "solido": [6181.0, 520.0, 454.0, 300.0]}, {"x": 6705, "y": 560, "imagen": "viga_metal_mediana", "solido": [6705.0, 560.0, 260.0, 300.0]}, {"x": 7035, "y": 540, "imagen": "plataforma_rejilla_metal", "solido": [7035.0, 540.0, 461.0, 300.0]}, {"x": 7300, "y": 560, "imagen": "plataforma_rejilla_metal", "solido": [7300.0, 560.0, 461.0, 300.0]}, {"x": 7750, "y": 560, "imagen": "plataforma_rejilla_metal", "solido": [7750.0, 560.0, 461.0, 300.0]}, {"x": 8200, "y": 560, "imagen": "plataforma_rejilla_metal", "solido": [8200.0, 560.0, 461.0, 300.0]}], "unaVia": [{"x": 366, "y": 380, "imagen": "viga_metal_mediana", "solido": [366.0, 380.0, 260.0, 22.0]}, {"x": 1850, "y": 350, "imagen": "viga_metal_mediana", "solido": [1850.0, 350.0, 260.0, 22.0]}, {"x": 3153, "y": 360, "imagen": "viga_metal_mediana", "solido": [3153.0, 360.0, 260.0, 22.0]}, {"x": 4525, "y": 350, "imagen": "viga_metal_mediana", "solido": [4525.0, 350.0, 260.0, 22.0]}, {"x": 6016, "y": 370, "imagen": "viga_metal_mediana", "solido": [6016.0, 370.0, 260.0, 22.0]}, {"x": 7680, "y": 410, "imagen": "viga_metal_mediana", "solido": [7680.0, 410.0, 260.0, 22.0]}, {"x": 8280, "y": 410, "imagen": "viga_metal_mediana", "solido": [8280.0, 410.0, 260.0, 22.0]}], "obstaculos": [], "puas": [{"x": 1577, "imagen": "cable_electrico_cortado_chispas", "caja": [1603.0, 437.0, 230.0, 70.0], "imgW": 282, "imgH": 141, "imgY": 367}, {"x": 3024, "imagen": "barril_oxidado_fuga_acido", "caja": [3050.0, 455.0, 24.0, 62.0], "imgW": 76, "imgH": 125, "imgY": 393}, {"x": 4010, "imagen": "tubo_codo_goteando_agua_toxica", "caja": [4036.0, 465.0, 53.0, 73.0], "imgW": 105, "imgH": 146, "imgY": 392}, {"x": 5308, "imagen": "escombro_varillas_puntiagudas", "caja": [5334.0, 484.0, 146.0, 64.0], "imgW": 198, "imgH": 128, "imgY": 420}, {"x": 6359, "imagen": "barril_verde_derrame_acido", "caja": [6385.0, 463.0, 46.0, 64.0], "imgW": 98, "imgH": 129, "imgY": 399}], "bombas": [], "adornos": [{"x": 200, "y": 592, "imagen": "andamio_torre", "delante": false}, {"x": 960, "y": 592, "imagen": "viga_vertical_alta", "delante": false}, {"x": 1720, "y": 592, "imagen": "escalera_metal", "delante": false}, {"x": 2480, "y": 592, "imagen": "viga_vertical_01", "delante": false}, {"x": 3240, "y": 592, "imagen": "viga_vertical_02", "delante": false}, {"x": 4000, "y": 592, "imagen": "andamio_torre", "delante": false}, {"x": 4760, "y": 592, "imagen": "viga_vertical_alta", "delante": false}, {"x": 5520, "y": 592, "imagen": "escalera_metal", "delante": false}, {"x": 6280, "y": 592, "imagen": "viga_vertical_01", "delante": false}, {"x": 7040, "y": 592, "imagen": "viga_vertical_02", "delante": false}, {"x": 16, "y": 560, "imagen": "barril_oxidado", "delante": false}, {"x": 547, "y": 530, "imagen": "letrero_h2o_company", "delante": false}, {"x": 989, "y": 560, "imagen": "llantas_apiladas", "delante": false}, {"x": 1507, "y": 500, "imagen": "barriles_apilados", "delante": false}, {"x": 2031, "y": 540, "imagen": "senal_advertencia_triangulo", "delante": false}, {"x": 2361, "y": 560, "imagen": "conos_trafico", "delante": false}, {"x": 2892, "y": 510, "imagen": "letrero_agua_contaminada", "delante": false}, {"x": 3334, "y": 560, "imagen": "valla_metal", "delante": false}, {"x": 3852, "y": 530, "imagen": "barril_verde_contaminado", "delante": false}, {"x": 4376, "y": 560, "imagen": "generador_electrico", "delante": false}, {"x": 4706, "y": 500, "imagen": "senal_hombres_trabajando", "delante": false}, {"x": 5237, "y": 540, "imagen": "barrera_concreto_rayada", "delante": false}, {"x": 5679, "y": 560, "imagen": "cajas_madera_y_caja_h2o", "delante": false}, {"x": 6197, "y": 520, "imagen": "letrero_obra_flecha", "delante": false}, {"x": 6721, "y": 560, "imagen": "barril_oxidado", "delante": false}, {"x": 7051, "y": 540, "imagen": "letrero_h2o_company", "delante": false}], "flotantes": [], "enemigos": [{"paquete": "hazmat", "proyectil": "barril_verde_contaminado", "carpetaProyectil": "nivel3", "escalaProyectil": 0.55, "esPersona": true, "jefe": false, "vida": 2, "escala": 1.0, "x": 1718, "izquierda": 1546, "derecha": 1890}, {"paquete": "policia", "proyectil": "garrafon_h2o_chico", "carpetaProyectil": "nivel3", "escalaProyectil": 0.6, "esPersona": true, "jefe": false, "vida": 2, "escala": 1.0, "x": 3062, "izquierda": 2931, "derecha": 3193}, {"paquete": "robot", "proyectil": "charco_agua_contaminada", "carpetaProyectil": "nivel3", "escalaProyectil": 0.3, "esPersona": false, "jefe": false, "vida": 2, "escala": 1.0, "x": 4490, "izquierda": 4415, "derecha": 4565}, {"paquete": "hazmat", "proyectil": "barril_verde_contaminado", "carpetaProyectil": "nivel3", "escalaProyectil": 0.55, "esPersona": true, "jefe": false, "vida": 2, "escala": 1.0, "x": 5887, "izquierda": 5718, "derecha": 6056}, {"paquete": "policia", "proyectil": "garrafon_h2o_chico", "carpetaProyectil": "nivel3", "escalaProyectil": 0.6, "esPersona": true, "jefe": false, "vida": 2, "escala": 1.0, "x": 7265, "izquierda": 7090, "derecha": 7441}], "gotas": [{"x": 138, "y": 502}, {"x": 253, "y": 502}, {"x": 368, "y": 502}, {"x": 661, "y": 472}, {"x": 791, "y": 472}, {"x": 1107, "y": 502}, {"x": 1219, "y": 502}, {"x": 1331, "y": 502}, {"x": 1627, "y": 442}, {"x": 1740, "y": 442}, {"x": 1854, "y": 442}, {"x": 2106, "y": 482}, {"x": 2197, "y": 482}, {"x": 2483, "y": 502}, {"x": 2598, "y": 502}, {"x": 2713, "y": 502}, {"x": 3006, "y": 452}, {"x": 3136, "y": 452}, {"x": 3452, "y": 502}, {"x": 3564, "y": 502}, {"x": 3676, "y": 502}, {"x": 3972, "y": 472}, {"x": 4085, "y": 472}, {"x": 4199, "y": 472}, {"x": 4451, "y": 502}, {"x": 4542, "y": 502}, {"x": 4828, "y": 442}, {"x": 4943, "y": 442}, {"x": 5058, "y": 442}, {"x": 5351, "y": 482}, {"x": 5481, "y": 482}, {"x": 5797, "y": 502}, {"x": 5909, "y": 502}, {"x": 6021, "y": 502}, {"x": 6317, "y": 462}, {"x": 6430, "y": 462}, {"x": 6544, "y": 462}, {"x": 6796, "y": 502}, {"x": 6887, "y": 502}, {"x": 7173, "y": 482}, {"x": 7288, "y": 482}, {"x": 7403, "y": 482}, {"x": 496, "y": 380}, {"x": 1456, "y": 350}, {"x": 2310, "y": 390}, {"x": 3283, "y": 360}, {"x": 4325, "y": 380}, {"x": 5186, "y": 350}, {"x": 6146, "y": 370}, {"x": 7000, "y": 390}], "puntosSeguros": [70, 597, 1042, 1554, 2085, 2415, 2942, 3387, 3899, 4430, 4760, 5287, 5732, 6244, 6775, 7105, 7370, 7820, 8270], "superficies": [{"left": 0, "right": 461, "y": 560}, {"left": 531, "right": 903, "y": 530}, {"left": 973, "right": 1421, "y": 560}, {"left": 1491, "right": 1945, "y": 500}, {"left": 2015, "right": 2275, "y": 540}, {"left": 2345, "right": 2806, "y": 560}, {"left": 2876, "right": 3248, "y": 510}, {"left": 3318, "right": 3766, "y": 560}, {"left": 3836, "right": 4290, "y": 530}, {"left": 4360, "right": 4620, "y": 560}, {"left": 4690, "right": 5151, "y": 500}, {"left": 5221, "right": 5593, "y": 540}, {"left": 5663, "right": 6111, "y": 560}, {"left": 6181, "right": 6635, "y": 520}, {"left": 6705, "right": 6965, "y": 560}, {"left": 7035, "right": 7496, "y": 540}, {"left": 7300, "right": 7761, "y": 560}, {"left": 7750, "right": 8211, "y": 560}, {"left": 8200, "right": 8661, "y": 560}], "burbujas": [], "humo": [300, 1200, 2100, 3000, 3900, 4800, 5700, 6600, 7500, 8400], "dialogoInicio": [{"quien": "corvo", "nombre": "CORVO", "frase": "Es aquí. De esta planta salió todo."}, {"quien": "corvo", "nombre": "CORVO", "frase": "La H2O Company. Embotellan el agua que le quitan al pueblo."}, {"quien": "heroe", "nombre": "", "frase": "Entonces el río no se secó solo. Se lo llevaron."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Hoy peleamos los dos. Ya no vas solo."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Cuidado con las fugas y los charcos: todo aquí quema."}, {"quien": "heroe", "nombre": "", "frase": "Vamos por el que da las órdenes."}], "dialogoEncuentro": [{"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Así que ustedes son los que entraron a mi planta."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Déjame adivinar: vienen a salvar el agua."}, {"quien": "heroe", "nombre": "", "frase": "Vengo a que deje de robársela a mi pueblo."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "¿Robar? Yo le doy trabajo a cuatro mil familias."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Sin esta planta no hay medicinas, ni hospitales."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Ni la computadora en la que tus amigos juegan."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "El progreso siempre cuesta. Siempre ha costado."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Alguien tiene que tomar las decisiones difíciles."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Yo vengo de tu futuro. Déjame contarte cómo acaba."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Tu planta sigue ahí. Vacía. No queda agua que embotellar."}, {"quien": "heroe", "nombre": "", "frase": "El agua no es como el dinero. No se imprime más."}, {"quien": "heroe", "nombre": "", "frase": "Es el único recurso que no se puede fabricar."}, {"quien": "jefe", "nombre": "EL EMPRESARIO", "frase": "Palabras bonitas. El mundo funciona con otra cosa."}, {"quien": "heroe", "nombre": "", "frase": "Entonces esto lo vamos a discutir de otra forma."}], "dialogoMascara": [{"quien": "heroe", "nombre": "", "frase": "La máscara... se le cayó."}, {"quien": "heroe", "nombre": "", "frase": "No... no puede ser. ¿Papá?"}, {"quien": "padre", "nombre": "TU PADRE", "frase": "No tenías que verme así."}, {"quien": "heroe", "nombre": "", "frase": "Nos dijiste que te ibas a trabajar lejos."}, {"quien": "heroe", "nombre": "", "frase": "Que era por nosotros."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "Y lo era. Todo lo que hice fue por ustedes."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "Por un bien mayor. Por un futuro mejor para todos."}, {"quien": "heroe", "nombre": "", "frase": "¿Mejor para quién?"}, {"quien": "heroe", "nombre": "", "frase": "Mi hermanita lleva tres días sin tomar agua."}, {"quien": "heroe", "nombre": "", "frase": "No nos faltó dinero, papá. Nos faltaste tú."}, {"quien": "heroe", "nombre": "", "frase": "Y nos faltó lo único que no se compra."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "Yo... pensé que estaba haciendo lo correcto."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Casi todos los que arruinan algo lo creen."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "No voy a parar ahora. No después de todo esto."}, {"quien": "heroe", "nombre": "", "frase": "Entonces voy a tener que detenerte yo."}], "dialogoFinal": [{"quien": "padre", "nombre": "TU PADRE", "frase": "Ya no puedo más..."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "¿De verdad crees que se puede arreglar?"}, {"quien": "heroe", "nombre": "", "frase": "No sé si se pueda arreglar todo. Pero se puede empezar."}, {"quien": "heroe", "nombre": "", "frase": "Lo mejor que podemos hacer es cuidar lo que todavía tenemos."}, {"quien": "heroe", "nombre": "", "frase": "Limpiar lo que ensuciamos. Cerrar la llave. Reparar las fugas."}, {"quien": "heroe", "nombre": "", "frase": "No tirar nada al drenaje. Enseñarle a los que vienen."}, {"quien": "heroe", "nombre": "", "frase": "No se trata de dejar de avanzar, papá."}, {"quien": "heroe", "nombre": "", "frase": "Se trata de avanzar sin quedarnos sin con qué vivir."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "Tu mamá diría exactamente lo mismo."}, {"quien": "padre", "nombre": "TU PADRE", "frase": "Voy a cerrar la planta. Y voy a volver a casa."}, {"quien": "heroe", "nombre": "", "frase": "Juntos vamos a lograr un futuro mejor."}, {"quien": "corvo", "nombre": "CORVO", "frase": "Mira el agua, muchacho. Está volviendo."}]}};
+
+// ---------------------------------------------------------------------------
+// Animaciones (mismos estados, velocidades y cuadros que el motor Kotlin)
+// ---------------------------------------------------------------------------
+const ANIM_DEFS = {
+  aqua:   { quieto: [8, 6, 1], caminar: [6, 7, 1], correr: [4, 6, 1], agachar: [7, 5, 1], saltar: [7, 5, 0], disparar: [4, 4, 0], golpe: [6, 3, 0], caido: [9, 1, 0] },
+  yani:   { quieto: [8, 8, 1], caminar: [6, 9, 1], correr: [4, 8, 1], agachar: [7, 5, 1], saltar: [7, 6, 0], disparar: [4, 2, 0], golpe: [6, 3, 0], caido: [9, 3, 0] },
+  corvo:  { volar: [4, 7, 1], rapido: [2, 7, 1], cansado: [11, 7, 1], ataque: [3, 7, 1], derrota: [9, 5, 0] },
+  monstruo: { quieto: [8, 9, 1], caminar: [6, 12, 1], correr: [5, 8, 1], lanzar: [5, 9, 0] },
+  hazmat: { quieto: [8, 4, 1], caminar: [6, 7, 1], correr: [5, 7, 1], lanzar: [5, 7, 0], golpe: [5, 3, 0], derrota: [10, 6, 0] },
+  policia: { quieto: [8, 4, 1], caminar: [6, 7, 1], correr: [5, 7, 1], lanzar: [5, 9, 0], golpe: [5, 3, 0], derrota: [10, 4, 0] },
+  robot:  { quieto: [8, 3, 1], caminar: [6, 6, 1], correr: [5, 6, 1], lanzar: [5, 5, 0], golpe: [5, 4, 0], derrota: [10, 5, 0] },
+  jefe_mascara: { quieto: [9, 4, 1], caminar: [6, 6, 1], correr: [5, 6, 1], atacar: [4, 8, 0], golpe: [5, 5, 0], derrota: [10, 4, 0], romper: [7, 8, 0] },
+  jefe_sin_mascara: { quieto: [9, 4, 1], caminar: [6, 6, 1], correr: [5, 6, 1], atacar: [4, 8, 0], golpe: [5, 5, 0], derrota: [10, 4, 0], llorar: [8, 8, 1] }
+};
+function animDefsFor(ch) { return ANIM_DEFS[ch] || ANIM_DEFS.aqua; }
+
+class Anim {
+  constructor(defs, initial) {
+    this.defs = {};
+    for (const k in defs) this.defs[k] = { speed: defs[k][0], frames: defs[k][1], repeat: !!defs[k][2] };
+    this.state = initial; this.time = 0;
+  }
+  set(state, restart) {
+    if (state !== this.state) { this.state = state; this.time = 0; }
+    else if (restart) this.time = 0;
+  }
+  update() { this.time++; }
+  setTime(t) { this.time = t; }
+  frameIndex() {
+    const d = this.defs[this.state]; if (!d) return 0;
+    const idx = Math.floor(this.time / d.speed);
+    return d.repeat ? idx % Math.max(1, d.frames) : Math.min(idx, Math.max(0, d.frames - 1));
+  }
+  finished() {
+    const d = this.defs[this.state]; if (!d) return true;
+    return !d.repeat && Math.floor(this.time / d.speed) >= d.frames;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Carga de imágenes originales (assets/ del juego: sprites, fondos, HUD)
+// ---------------------------------------------------------------------------
+const MANIFEST = {"aqua/agachado_01": "aqua/agachado_01.png", "aqua/agachado_02": "aqua/agachado_02.png", "aqua/agachado_03": "aqua/agachado_03.png", "aqua/agachado_04": "aqua/agachado_04.png", "aqua/agachado_05": "aqua/agachado_05.png", "aqua/caminando_01": "aqua/caminando_01.png", "aqua/caminando_02": "aqua/caminando_02.png", "aqua/caminando_03": "aqua/caminando_03.png", "aqua/caminando_04": "aqua/caminando_04.png", "aqua/caminando_05": "aqua/caminando_05.png", "aqua/caminando_06": "aqua/caminando_06.png", "aqua/caminando_07": "aqua/caminando_07.png", "aqua/corriendo_02": "aqua/corriendo_02.png", "aqua/corriendo_03": "aqua/corriendo_03.png", "aqua/corriendo_04": "aqua/corriendo_04.png", "aqua/corriendo_05": "aqua/corriendo_05.png", "aqua/corriendo_06": "aqua/corriendo_06.png", "aqua/corriendo_07": "aqua/corriendo_07.png", "aqua/disparando_bolas_01": "aqua/disparando_bolas_01.png", "aqua/disparando_bolas_02": "aqua/disparando_bolas_02.png", "aqua/disparando_bolas_03": "aqua/disparando_bolas_03.png", "aqua/disparando_bolas_04": "aqua/disparando_bolas_04.png", "aqua/idle_quieto_01": "aqua/idle_quieto_01.png", "aqua/idle_quieto_02": "aqua/idle_quieto_02.png", "aqua/idle_quieto_03": "aqua/idle_quieto_03.png", "aqua/idle_quieto_04": "aqua/idle_quieto_04.png", "aqua/idle_quieto_05": "aqua/idle_quieto_05.png", "aqua/idle_quieto_06": "aqua/idle_quieto_06.png", "aqua/proyectiles_bola_cabello_01": "aqua/proyectiles_bola_cabello_01.png", "aqua/proyectiles_bola_cabello_02": "aqua/proyectiles_bola_cabello_02.png", "aqua/proyectiles_bola_cabello_03": "aqua/proyectiles_bola_cabello_03.png", "aqua/proyectiles_bola_cabello_04": "aqua/proyectiles_bola_cabello_04.png", "aqua/proyectiles_bola_cabello_05": "aqua/proyectiles_bola_cabello_05.png", "aqua/proyectiles_bola_cabello_06": "aqua/proyectiles_bola_cabello_06.png", "aqua/proyectiles_bola_cabello_07": "aqua/proyectiles_bola_cabello_07.png", "aqua/proyectiles_bola_cabello_08": "aqua/proyectiles_bola_cabello_08.png", "aqua/proyectiles_bola_cabello_09": "aqua/proyectiles_bola_cabello_09.png", "aqua/proyectiles_bola_cabello_10": "aqua/proyectiles_bola_cabello_10.png", "aqua/proyectiles_bola_cabello_11": "aqua/proyectiles_bola_cabello_11.png", "aqua/proyectiles_bola_cabello_12": "aqua/proyectiles_bola_cabello_12.png", "aqua/proyectiles_bola_cabello_13": "aqua/proyectiles_bola_cabello_13.png", "aqua/proyectiles_bola_cabello_14": "aqua/proyectiles_bola_cabello_14.png", "aqua/reaccion_impacto_02": "aqua/reaccion_impacto_02.png", "aqua/reaccion_impacto_03": "aqua/reaccion_impacto_03.png", "aqua/reaccion_impacto_04": "aqua/reaccion_impacto_04.png", "aqua/reaccion_impacto_05": "aqua/reaccion_impacto_05.png", "aqua/reaccion_impacto_06": "aqua/reaccion_impacto_06.png", "aqua/reaccion_impacto_07": "aqua/reaccion_impacto_07.png", "aqua/reaccion_impacto_08": "aqua/reaccion_impacto_08.png", "aqua/reaccion_impacto_09": "aqua/reaccion_impacto_09.png", "aqua/reaccion_impacto_10": "aqua/reaccion_impacto_10.png", "aqua/reaccion_impacto_11": "aqua/reaccion_impacto_11.png", "aqua/salto_02": "aqua/salto_02.png", "aqua/salto_03": "aqua/salto_03.png", "aqua/salto_04": "aqua/salto_04.png", "aqua/salto_05": "aqua/salto_05.png", "aqua/salto_06": "aqua/salto_06.png", "corvo/defeat_01": "corvo/defeat_01.png", "corvo/defeat_02": "corvo/defeat_02.png", "corvo/defeat_03": "corvo/defeat_03.png", "corvo/defeat_04": "corvo/defeat_04.png", "corvo/defeat_05": "corvo/defeat_05.png", "corvo/flap_01": "corvo/flap_01.png", "corvo/flap_02": "corvo/flap_02.png", "corvo/flap_03": "corvo/flap_03.png", "corvo/flap_04": "corvo/flap_04.png", "corvo/flap_05": "corvo/flap_05.png", "corvo/flap_06": "corvo/flap_06.png", "corvo/flap_07": "corvo/flap_07.png", "corvo/hit_01": "corvo/hit_01.png", "corvo/hit_02": "corvo/hit_02.png", "corvo/hit_03": "corvo/hit_03.png", "corvo/hit_04": "corvo/hit_04.png", "corvo/hit_05": "corvo/hit_05.png", "corvo/idle_01": "corvo/idle_01.png", "corvo/idle_02": "corvo/idle_02.png", "corvo/idle_03": "corvo/idle_03.png", "corvo/idle_04": "corvo/idle_04.png", "corvo/idle_05": "corvo/idle_05.png", "corvo/idle_06": "corvo/idle_06.png", "corvo/idle_07": "corvo/idle_07.png", "corvo/idle_08": "corvo/idle_08.png", "corvo/move_01": "corvo/move_01.png", "corvo/move_02": "corvo/move_02.png", "corvo/move_03": "corvo/move_03.png", "corvo/move_04": "corvo/move_04.png", "corvo/move_05": "corvo/move_05.png", "corvo/move_06": "corvo/move_06.png", "corvo/move_07": "corvo/move_07.png", "corvo/move_08": "corvo/move_08.png", "corvo/wing_attack_01": "corvo/wing_attack_01.png", "corvo/wing_attack_02": "corvo/wing_attack_02.png", "corvo/wing_attack_03": "corvo/wing_attack_03.png", "corvo/wing_attack_04": "corvo/wing_attack_04.png", "corvo/wing_attack_05": "corvo/wing_attack_05.png", "corvo/wing_attack_06": "corvo/wing_attack_06.png", "corvo/wing_attack_07": "corvo/wing_attack_07.png", "hazmat/defeat_01": "hazmat/defeat_01.png", "hazmat/defeat_02": "hazmat/defeat_02.png", "hazmat/defeat_03": "hazmat/defeat_03.png", "hazmat/defeat_04": "hazmat/defeat_04.png", "hazmat/defeat_05": "hazmat/defeat_05.png", "hazmat/defeat_06": "hazmat/defeat_06.png", "hazmat/hit_01": "hazmat/hit_01.png", "hazmat/hit_02": "hazmat/hit_02.png", "hazmat/hit_03": "hazmat/hit_03.png", "hazmat/idle_01": "hazmat/idle_01.png", "hazmat/idle_02": "hazmat/idle_02.png", "hazmat/idle_03": "hazmat/idle_03.png", "hazmat/idle_04": "hazmat/idle_04.png", "hazmat/throw_polluted_water_trash_01": "hazmat/throw_polluted_water_trash_01.png", "hazmat/throw_polluted_water_trash_02": "hazmat/throw_polluted_water_trash_02.png", "hazmat/throw_polluted_water_trash_03": "hazmat/throw_polluted_water_trash_03.png", "hazmat/throw_polluted_water_trash_04": "hazmat/throw_polluted_water_trash_04.png", "hazmat/throw_polluted_water_trash_05": "hazmat/throw_polluted_water_trash_05.png", "hazmat/throw_polluted_water_trash_06": "hazmat/throw_polluted_water_trash_06.png", "hazmat/throw_polluted_water_trash_07": "hazmat/throw_polluted_water_trash_07.png", "hazmat/walk_01": "hazmat/walk_01.png", "hazmat/walk_02": "hazmat/walk_02.png", "hazmat/walk_03": "hazmat/walk_03.png", "hazmat/walk_04": "hazmat/walk_04.png", "hazmat/walk_05": "hazmat/walk_05.png", "hazmat/walk_06": "hazmat/walk_06.png", "hazmat/walk_07": "hazmat/walk_07.png", "hud/corazon_lleno": "hud/corazon_lleno.png", "hud/corazon_vacio": "hud/corazon_vacio.png", "intro/title": "intro/title.jpg", "jefe_mascara/attack_01": "jefe_mascara/attack_01.png", "jefe_mascara/attack_02": "jefe_mascara/attack_02.png", "jefe_mascara/attack_03": "jefe_mascara/attack_03.png", "jefe_mascara/attack_04": "jefe_mascara/attack_04.png", "jefe_mascara/attack_05": "jefe_mascara/attack_05.png", "jefe_mascara/attack_06": "jefe_mascara/attack_06.png", "jefe_mascara/attack_07": "jefe_mascara/attack_07.png", "jefe_mascara/attack_08": "jefe_mascara/attack_08.png", "jefe_mascara/defeat_01": "jefe_mascara/defeat_01.png", "jefe_mascara/defeat_02": "jefe_mascara/defeat_02.png", "jefe_mascara/defeat_03": "jefe_mascara/defeat_03.png", "jefe_mascara/defeat_04": "jefe_mascara/defeat_04.png", "jefe_mascara/hit_01": "jefe_mascara/hit_01.png", "jefe_mascara/hit_02": "jefe_mascara/hit_02.png", "jefe_mascara/hit_03": "jefe_mascara/hit_03.png", "jefe_mascara/hit_04": "jefe_mascara/hit_04.png", "jefe_mascara/hit_05": "jefe_mascara/hit_05.png", "jefe_mascara/idle_01": "jefe_mascara/idle_01.png", "jefe_mascara/idle_02": "jefe_mascara/idle_02.png", "jefe_mascara/idle_03": "jefe_mascara/idle_03.png", "jefe_mascara/idle_04": "jefe_mascara/idle_04.png", "jefe_mascara/mask_break_01": "jefe_mascara/mask_break_01.png", "jefe_mascara/mask_break_02": "jefe_mascara/mask_break_02.png", "jefe_mascara/mask_break_03": "jefe_mascara/mask_break_03.png", "jefe_mascara/mask_break_04": "jefe_mascara/mask_break_04.png", "jefe_mascara/mask_break_05": "jefe_mascara/mask_break_05.png", "jefe_mascara/mask_break_06": "jefe_mascara/mask_break_06.png", "jefe_mascara/mask_break_07": "jefe_mascara/mask_break_07.png", "jefe_mascara/mask_break_08": "jefe_mascara/mask_break_08.png", "jefe_mascara/walk_01": "jefe_mascara/walk_01.png", "jefe_mascara/walk_02": "jefe_mascara/walk_02.png", "jefe_mascara/walk_03": "jefe_mascara/walk_03.png", "jefe_mascara/walk_04": "jefe_mascara/walk_04.png", "jefe_mascara/walk_05": "jefe_mascara/walk_05.png", "jefe_mascara/walk_06": "jefe_mascara/walk_06.png", "jefe_sin_mascara/attack_01": "jefe_sin_mascara/attack_01.png", "jefe_sin_mascara/attack_02": "jefe_sin_mascara/attack_02.png", "jefe_sin_mascara/attack_03": "jefe_sin_mascara/attack_03.png", "jefe_sin_mascara/attack_04": "jefe_sin_mascara/attack_04.png", "jefe_sin_mascara/attack_05": "jefe_sin_mascara/attack_05.png", "jefe_sin_mascara/attack_06": "jefe_sin_mascara/attack_06.png", "jefe_sin_mascara/attack_07": "jefe_sin_mascara/attack_07.png", "jefe_sin_mascara/attack_08": "jefe_sin_mascara/attack_08.png", "jefe_sin_mascara/cry_01": "jefe_sin_mascara/cry_01.png", "jefe_sin_mascara/cry_02": "jefe_sin_mascara/cry_02.png", "jefe_sin_mascara/cry_03": "jefe_sin_mascara/cry_03.png", "jefe_sin_mascara/cry_04": "jefe_sin_mascara/cry_04.png", "jefe_sin_mascara/cry_05": "jefe_sin_mascara/cry_05.png", "jefe_sin_mascara/cry_06": "jefe_sin_mascara/cry_06.png", "jefe_sin_mascara/cry_07": "jefe_sin_mascara/cry_07.png", "jefe_sin_mascara/cry_08": "jefe_sin_mascara/cry_08.png", "jefe_sin_mascara/defeat_01": "jefe_sin_mascara/defeat_01.png", "jefe_sin_mascara/defeat_02": "jefe_sin_mascara/defeat_02.png", "jefe_sin_mascara/defeat_03": "jefe_sin_mascara/defeat_03.png", "jefe_sin_mascara/defeat_04": "jefe_sin_mascara/defeat_04.png", "jefe_sin_mascara/hit_01": "jefe_sin_mascara/hit_01.png", "jefe_sin_mascara/hit_02": "jefe_sin_mascara/hit_02.png", "jefe_sin_mascara/hit_03": "jefe_sin_mascara/hit_03.png", "jefe_sin_mascara/hit_04": "jefe_sin_mascara/hit_04.png", "jefe_sin_mascara/hit_05": "jefe_sin_mascara/hit_05.png", "jefe_sin_mascara/idle_01": "jefe_sin_mascara/idle_01.png", "jefe_sin_mascara/idle_02": "jefe_sin_mascara/idle_02.png", "jefe_sin_mascara/idle_03": "jefe_sin_mascara/idle_03.png", "jefe_sin_mascara/idle_04": "jefe_sin_mascara/idle_04.png", "jefe_sin_mascara/walk_01": "jefe_sin_mascara/walk_01.png", "jefe_sin_mascara/walk_02": "jefe_sin_mascara/walk_02.png", "jefe_sin_mascara/walk_03": "jefe_sin_mascara/walk_03.png", "jefe_sin_mascara/walk_04": "jefe_sin_mascara/walk_04.png", "jefe_sin_mascara/walk_05": "jefe_sin_mascara/walk_05.png", "jefe_sin_mascara/walk_06": "jefe_sin_mascara/walk_06.png", "monstruo/ataque_especial_01": "monstruo/ataque_especial_01.png", "monstruo/ataque_especial_02": "monstruo/ataque_especial_02.png", "monstruo/ataque_especial_03": "monstruo/ataque_especial_03.png", "monstruo/ataque_especial_04": "monstruo/ataque_especial_04.png", "monstruo/ataque_especial_05": "monstruo/ataque_especial_05.png", "monstruo/ataque_especial_06": "monstruo/ataque_especial_06.png", "monstruo/ataque_especial_07": "monstruo/ataque_especial_07.png", "monstruo/ataque_especial_08": "monstruo/ataque_especial_08.png", "monstruo/caminando_01": "monstruo/caminando_01.png", "monstruo/caminando_02": "monstruo/caminando_02.png", "monstruo/caminando_03": "monstruo/caminando_03.png", "monstruo/caminando_04": "monstruo/caminando_04.png", "monstruo/caminando_05": "monstruo/caminando_05.png", "monstruo/caminando_06": "monstruo/caminando_06.png", "monstruo/caminando_07": "monstruo/caminando_07.png", "monstruo/caminando_08": "monstruo/caminando_08.png", "monstruo/caminando_09": "monstruo/caminando_09.png", "monstruo/caminando_10": "monstruo/caminando_10.png", "monstruo/caminando_11": "monstruo/caminando_11.png", "monstruo/caminando_12": "monstruo/caminando_12.png", "monstruo/carga_basura_01": "monstruo/carga_basura_01.png", "monstruo/carga_basura_02": "monstruo/carga_basura_02.png", "monstruo/carga_basura_03": "monstruo/carga_basura_03.png", "monstruo/carga_basura_04": "monstruo/carga_basura_04.png", "monstruo/carga_basura_05": "monstruo/carga_basura_05.png", "monstruo/carga_basura_06": "monstruo/carga_basura_06.png", "monstruo/carga_basura_07": "monstruo/carga_basura_07.png", "monstruo/carga_basura_08": "monstruo/carga_basura_08.png", "monstruo/carga_basura_09": "monstruo/carga_basura_09.png", "monstruo/corriendo_02": "monstruo/corriendo_02.png", "monstruo/corriendo_03": "monstruo/corriendo_03.png", "monstruo/corriendo_04": "monstruo/corriendo_04.png", "monstruo/corriendo_05": "monstruo/corriendo_05.png", "monstruo/corriendo_06": "monstruo/corriendo_06.png", "monstruo/corriendo_07": "monstruo/corriendo_07.png", "monstruo/corriendo_08": "monstruo/corriendo_08.png", "monstruo/corriendo_09": "monstruo/corriendo_09.png", "monstruo/defensa_tapa_01": "monstruo/defensa_tapa_01.png", "monstruo/defensa_tapa_02": "monstruo/defensa_tapa_02.png", "monstruo/defensa_tapa_03": "monstruo/defensa_tapa_03.png", "monstruo/defensa_tapa_04": "monstruo/defensa_tapa_04.png", "monstruo/defensa_tapa_05": "monstruo/defensa_tapa_05.png", "monstruo/defensa_tapa_06": "monstruo/defensa_tapa_06.png", "monstruo/defensa_tapa_07": "monstruo/defensa_tapa_07.png", "monstruo/defensa_tapa_08": "monstruo/defensa_tapa_08.png", "monstruo/defensa_tapa_09": "monstruo/defensa_tapa_09.png", "monstruo/defensa_tapa_10": "monstruo/defensa_tapa_10.png", "monstruo/lanzamiento_03": "monstruo/lanzamiento_03.png", "monstruo/lanzamiento_04": "monstruo/lanzamiento_04.png", "monstruo/lanzamiento_05": "monstruo/lanzamiento_05.png", "monstruo/lanzamiento_06": "monstruo/lanzamiento_06.png", "monstruo/reposo_01": "monstruo/reposo_01.png", "monstruo/reposo_02": "monstruo/reposo_02.png", "monstruo/reposo_03": "monstruo/reposo_03.png", "monstruo/reposo_04": "monstruo/reposo_04.png", "monstruo/reposo_05": "monstruo/reposo_05.png", "monstruo/reposo_06": "monstruo/reposo_06.png", "monstruo/reposo_07": "monstruo/reposo_07.png", "monstruo/reposo_08": "monstruo/reposo_08.png", "monstruo/reposo_09": "monstruo/reposo_09.png", "nivel/pozo": "nivel/pozo.png", "nivel/gota": "nivel/gota.png", "nivel/gota_hud": "nivel/gota_hud.png", "nivel/basura_toxica": "nivel/basura_toxica.png", "nivel/retrato_aqua": "nivel/retrato_aqua.png", "nivel/retrato_yani": "nivel/retrato_yani.png", "nivel/retrato_corvo": "nivel/retrato_corvo.png", "nivel/plataforma": "nivel/plataforma.png", "nivel/plataforma_corta": "nivel/plataforma_corta.png", "nivel/plataforma_larga": "nivel/plataforma_larga.png", "nivel/plataforma_b": "nivel/plataforma_b.png", "nivel/plataforma_c": "nivel/plataforma_c.png", "nivel/plataforma_d": "nivel/plataforma_d.png", "nivel/plataforma_e": "nivel/plataforma_e.png", "nivel/puas": "nivel/puas.png", "nivel/puas_b": "nivel/puas_b.png", "nivel/puas_techo": "nivel/puas_techo.png", "nivel/bomba": "nivel/bomba.png", "nivel/toxico": "nivel/toxico.png", "nivel/bote": "nivel/bote.png", "nivel/charco_toxico": "nivel/charco_toxico.png", "nivel/senaletica": "nivel/senaletica.png", "nivel/llanta": "nivel/llanta.png", "nivel/cubo": "nivel/cubo.png", "nivel/humo": "nivel/humo.png", "nivel/caja_fuerte": "nivel/caja_fuerte.png", "nivel/fuente": "nivel/fuente.png", "nivel/fuente_b": "nivel/fuente_b.png", "nivel/fondo_toxico": "nivel/fondo_toxico.png", "nivel/fondo_paisaje": "nivel/fondo_paisaje.png", "nivel/fondo_fabrica": "nivel/fondo_fabrica.png", "nivel/rio_toxico": "nivel/rio_toxico.png", "nivel/bandera_meta": "nivel/bandera_meta.png", "nivel/burbujas": "nivel/burbujas.png", "nivel/retrato_jefe": "nivel/retrato_jefe.png", "nivel/retrato_padre": "nivel/retrato_padre.png", "nivel1/alga_a": "nivel1/alga_a.png", "nivel1/alga_b": "nivel1/alga_b.png", "nivel1/alga_c": "nivel1/alga_c.png", "nivel1/andamio_a": "nivel1/andamio_a.png", "nivel1/andamio_b": "nivel1/andamio_b.png", "nivel1/caja_a": "nivel1/caja_a.png", "nivel1/caja_b": "nivel1/caja_b.png", "nivel1/cerca": "nivel1/cerca.png", "nivel1/llanta_rama": "nivel1/llanta_rama.png", "nivel1/mata_der": "nivel1/mata_der.png", "nivel1/mata_izq": "nivel1/mata_izq.png", "nivel1/piedra": "nivel1/piedra.png", "nivel1/pinchos_caja": "nivel1/pinchos_caja.png", "nivel1/pinchos_chicos": "nivel1/pinchos_chicos.png", "nivel1/puente_a": "nivel1/puente_a.png", "nivel1/puente_b": "nivel1/puente_b.png", "nivel1/reciclaje_a": "nivel1/reciclaje_a.png", "nivel1/reciclaje_b": "nivel1/reciclaje_b.png", "nivel1/tronco_a": "nivel1/tronco_a.png", "nivel1/tronco_b": "nivel1/tronco_b.png", "nivel1/fondo": "nivel1/fondo.png", "nivel3/andamio_inestable": "nivel3/andamio_inestable.png", "nivel3/andamio_plataforma_madera": "nivel3/andamio_plataforma_madera.png", "nivel3/andamio_plataforma_rota": "nivel3/andamio_plataforma_rota.png", "nivel3/andamio_torre": "nivel3/andamio_torre.png", "nivel3/barandal_derrumbado": "nivel3/barandal_derrumbado.png", "nivel3/barrera_concreto": "nivel3/barrera_concreto.png", "nivel3/barrera_concreto_rayada": "nivel3/barrera_concreto_rayada.png", "nivel3/barriles_apilados": "nivel3/barriles_apilados.png", "nivel3/barriles_apilados_derramando_acido": "nivel3/barriles_apilados_derramando_acido.png", "nivel3/barriles_y_cajas": "nivel3/barriles_y_cajas.png", "nivel3/barril_con_tubo_en_llamas": "nivel3/barril_con_tubo_en_llamas.png", "nivel3/barril_oxidado": "nivel3/barril_oxidado.png", "nivel3/barril_oxidado_en_llamas": "nivel3/barril_oxidado_en_llamas.png", "nivel3/barril_oxidado_fuga_acido": "nivel3/barril_oxidado_fuga_acido.png", "nivel3/barril_rodando_derrame_toxico": "nivel3/barril_rodando_derrame_toxico.png", "nivel3/barril_verde_contaminado": "nivel3/barril_verde_contaminado.png", "nivel3/barril_verde_derrame_acido": "nivel3/barril_verde_derrame_acido.png", "nivel3/barril_verde_en_llamas": "nivel3/barril_verde_en_llamas.png", "nivel3/barril_volcado_derrame_toxico": "nivel3/barril_volcado_derrame_toxico.png", "nivel3/barril_y_barril_volcado_derramando": "nivel3/barril_y_barril_volcado_derramando.png", "nivel3/barril_y_barril_volcado_derramando_02": "nivel3/barril_y_barril_volcado_derramando_02.png", "nivel3/botella_agua_chica": "nivel3/botella_agua_chica.png", "nivel3/botella_agua_mediana": "nivel3/botella_agua_mediana.png", "nivel3/cables_pelados_enredados_chispas": "nivel3/cables_pelados_enredados_chispas.png", "nivel3/cable_electrico_cortado_chispas": "nivel3/cable_electrico_cortado_chispas.png", "nivel3/cajas_madera_y_caja_h2o": "nivel3/cajas_madera_y_caja_h2o.png", "nivel3/charco_agua_contaminada": "nivel3/charco_agua_contaminada.png", "nivel3/charco_agua_toxica_vapores": "nivel3/charco_agua_toxica_vapores.png", "nivel3/charco_contaminado": "nivel3/charco_contaminado.png", "nivel3/charco_contaminado_mediano": "nivel3/charco_contaminado_mediano.png", "nivel3/charco_electrificado": "nivel3/charco_electrificado.png", "nivel3/charco_lodo_grande": "nivel3/charco_lodo_grande.png", "nivel3/charco_lodo_toxico_vapores": "nivel3/charco_lodo_toxico_vapores.png", "nivel3/conos_trafico": "nivel3/conos_trafico.png", "nivel3/escalera_metal": "nivel3/escalera_metal.png", "nivel3/escombro_con_estacas": "nivel3/escombro_con_estacas.png", "nivel3/escombro_piedras": "nivel3/escombro_piedras.png", "nivel3/escombro_varillas_puntiagudas": "nivel3/escombro_varillas_puntiagudas.png", "nivel3/garrafon_h2o_chico": "nivel3/garrafon_h2o_chico.png", "nivel3/garrafon_h2o_grande": "nivel3/garrafon_h2o_grande.png", "nivel3/garrafon_h2o_mediano": "nivel3/garrafon_h2o_mediano.png", "nivel3/generador_electrico": "nivel3/generador_electrico.png", "nivel3/letrero_agua_contaminada": "nivel3/letrero_agua_contaminada.png", "nivel3/letrero_caido_cable_electrico": "nivel3/letrero_caido_cable_electrico.png", "nivel3/letrero_h2o_company": "nivel3/letrero_h2o_company.png", "nivel3/letrero_obra_flecha": "nivel3/letrero_obra_flecha.png", "nivel3/llantas_apiladas": "nivel3/llantas_apiladas.png", "nivel3/llantas_y_escombro_con_charco": "nivel3/llantas_y_escombro_con_charco.png", "nivel3/malla_metal_rota": "nivel3/malla_metal_rota.png", "nivel3/panorama": "nivel3/panorama.png", "nivel3/pasarela_metal_barandal": "nivel3/pasarela_metal_barandal.png", "nivel3/pasarela_metal_barandal_roto": "nivel3/pasarela_metal_barandal_roto.png", "nivel3/piedras_sueltas": "nivel3/piedras_sueltas.png", "nivel3/pila_cajas_barril_llantas": "nivel3/pila_cajas_barril_llantas.png", "nivel3/pila_escombro_negro": "nivel3/pila_escombro_negro.png", "nivel3/pila_llantas_basura": "nivel3/pila_llantas_basura.png", "nivel3/plataforma_rejilla_metal": "nivel3/plataforma_rejilla_metal.png", "nivel3/plataforma_rejilla_metal_doble": "nivel3/plataforma_rejilla_metal_doble.png", "nivel3/rampa_metal": "nivel3/rampa_metal.png", "nivel3/rampa_metal_baja": "nivel3/rampa_metal_baja.png", "nivel3/roca": "nivel3/roca.png", "nivel3/senal_advertencia_triangulo": "nivel3/senal_advertencia_triangulo.png", "nivel3/senal_hombres_trabajando": "nivel3/senal_hombres_trabajando.png", "nivel3/tableros_electricos_corto_circuito": "nivel3/tableros_electricos_corto_circuito.png", "nivel3/tubo_codo_derrame_toxico_01": "nivel3/tubo_codo_derrame_toxico_01.png", "nivel3/tubo_codo_derrame_toxico_02": "nivel3/tubo_codo_derrame_toxico_02.png", "nivel3/tubo_codo_goteando_agua_toxica": "nivel3/tubo_codo_goteando_agua_toxica.png", "nivel3/tubo_fuga_agua_contaminada": "nivel3/tubo_fuga_agua_contaminada.png", "nivel3/tubo_fuga_vapor_caliente": "nivel3/tubo_fuga_vapor_caliente.png", "nivel3/tubo_roto_derrame_toxico": "nivel3/tubo_roto_derrame_toxico.png", "nivel3/tubo_roto_en_llamas": "nivel3/tubo_roto_en_llamas.png", "nivel3/tubo_vertiendo_agua_toxica_01": "nivel3/tubo_vertiendo_agua_toxica_01.png", "nivel3/tubo_vertiendo_agua_toxica_02": "nivel3/tubo_vertiendo_agua_toxica_02.png", "nivel3/valla_alambre_de_puas": "nivel3/valla_alambre_de_puas.png", "nivel3/valla_malla_metal": "nivel3/valla_malla_metal.png", "nivel3/valla_metal": "nivel3/valla_metal.png", "nivel3/varillas_y_escombro": "nivel3/varillas_y_escombro.png", "nivel3/ventilador_industrial_01": "nivel3/ventilador_industrial_01.png", "nivel3/ventilador_industrial_02": "nivel3/ventilador_industrial_02.png", "nivel3/vidrios_rotos_y_varillas": "nivel3/vidrios_rotos_y_varillas.png", "nivel3/viga_caida_con_escombros": "nivel3/viga_caida_con_escombros.png", "nivel3/viga_cayendo_sobre_andamio": "nivel3/viga_cayendo_sobre_andamio.png", "nivel3/viga_horizontal_delgada": "nivel3/viga_horizontal_delgada.png", "nivel3/viga_metal_bloque": "nivel3/viga_metal_bloque.png", "nivel3/viga_metal_larga": "nivel3/viga_metal_larga.png", "nivel3/viga_metal_larga_02": "nivel3/viga_metal_larga_02.png", "nivel3/viga_metal_mediana": "nivel3/viga_metal_mediana.png", "nivel3/viga_metal_oxidada": "nivel3/viga_metal_oxidada.png", "nivel3/viga_vertical_01": "nivel3/viga_vertical_01.png", "nivel3/viga_vertical_02": "nivel3/viga_vertical_02.png", "nivel3/viga_vertical_alta": "nivel3/viga_vertical_alta.png", "policia/defeat_01": "policia/defeat_01.png", "policia/defeat_02": "policia/defeat_02.png", "policia/defeat_03": "policia/defeat_03.png", "policia/defeat_04": "policia/defeat_04.png", "policia/hit_01": "policia/hit_01.png", "policia/hit_02": "policia/hit_02.png", "policia/hit_03": "policia/hit_03.png", "policia/idle_01": "policia/idle_01.png", "policia/idle_02": "policia/idle_02.png", "policia/idle_03": "policia/idle_03.png", "policia/idle_04": "policia/idle_04.png", "policia/throw_01": "policia/throw_01.png", "policia/throw_02": "policia/throw_02.png", "policia/throw_03": "policia/throw_03.png", "policia/throw_04": "policia/throw_04.png", "policia/throw_05": "policia/throw_05.png", "policia/throw_06": "policia/throw_06.png", "policia/throw_07": "policia/throw_07.png", "policia/throw_08": "policia/throw_08.png", "policia/throw_09": "policia/throw_09.png", "policia/walk_01": "policia/walk_01.png", "policia/walk_02": "policia/walk_02.png", "policia/walk_03": "policia/walk_03.png", "policia/walk_04": "policia/walk_04.png", "policia/walk_05": "policia/walk_05.png", "policia/walk_06": "policia/walk_06.png", "policia/walk_07": "policia/walk_07.png", "robot/defeat_01": "robot/defeat_01.png", "robot/defeat_02": "robot/defeat_02.png", "robot/defeat_03": "robot/defeat_03.png", "robot/defeat_04": "robot/defeat_04.png", "robot/defeat_05": "robot/defeat_05.png", "robot/hit_01": "robot/hit_01.png", "robot/hit_02": "robot/hit_02.png", "robot/hit_03": "robot/hit_03.png", "robot/hit_04": "robot/hit_04.png", "robot/idle_01": "robot/idle_01.png", "robot/idle_02": "robot/idle_02.png", "robot/idle_03": "robot/idle_03.png", "robot/move_01": "robot/move_01.png", "robot/move_02": "robot/move_02.png", "robot/move_03": "robot/move_03.png", "robot/move_04": "robot/move_04.png", "robot/move_05": "robot/move_05.png", "robot/move_06": "robot/move_06.png", "robot/spraying_01": "robot/spraying_01.png", "robot/spraying_02": "robot/spraying_02.png", "robot/spraying_03": "robot/spraying_03.png", "robot/spraying_04": "robot/spraying_04.png", "robot/spraying_05": "robot/spraying_05.png", "yani/agachado_01": "yani/agachado_01.png", "yani/agachado_02": "yani/agachado_02.png", "yani/agachado_03": "yani/agachado_03.png", "yani/agachado_04": "yani/agachado_04.png", "yani/agachado_05": "yani/agachado_05.png", "yani/botella_meta_01": "yani/botella_meta_01.png", "yani/botella_meta_02": "yani/botella_meta_02.png", "yani/botella_meta_03": "yani/botella_meta_03.png", "yani/botella_meta_objeto_01": "yani/botella_meta_objeto_01.png", "yani/caminando_01": "yani/caminando_01.png", "yani/caminando_02": "yani/caminando_02.png", "yani/caminando_03": "yani/caminando_03.png", "yani/caminando_04": "yani/caminando_04.png", "yani/caminando_05": "yani/caminando_05.png", "yani/caminando_06": "yani/caminando_06.png", "yani/caminando_07": "yani/caminando_07.png", "yani/caminando_08": "yani/caminando_08.png", "yani/caminando_09": "yani/caminando_09.png", "yani/corriendo_01": "yani/corriendo_01.png", "yani/corriendo_02": "yani/corriendo_02.png", "yani/corriendo_03": "yani/corriendo_03.png", "yani/corriendo_04": "yani/corriendo_04.png", "yani/corriendo_05": "yani/corriendo_05.png", "yani/corriendo_06": "yani/corriendo_06.png", "yani/corriendo_07": "yani/corriendo_07.png", "yani/corriendo_08": "yani/corriendo_08.png", "yani/disparando_01": "yani/disparando_01.png", "yani/disparando_02": "yani/disparando_02.png", "yani/disparando_proyectil_01": "yani/disparando_proyectil_01.png", "yani/disparando_proyectil_02": "yani/disparando_proyectil_02.png", "yani/disparando_proyectil_03": "yani/disparando_proyectil_03.png", "yani/disparando_proyectil_04": "yani/disparando_proyectil_04.png", "yani/disparando_proyectil_05": "yani/disparando_proyectil_05.png", "yani/idle_01": "yani/idle_01.png", "yani/idle_02": "yani/idle_02.png", "yani/idle_03": "yani/idle_03.png", "yani/idle_04": "yani/idle_04.png", "yani/idle_05": "yani/idle_05.png", "yani/idle_06": "yani/idle_06.png", "yani/idle_07": "yani/idle_07.png", "yani/idle_08": "yani/idle_08.png", "yani/muerte_derrota_01": "yani/muerte_derrota_01.png", "yani/muerte_derrota_02": "yani/muerte_derrota_02.png", "yani/muerte_derrota_03": "yani/muerte_derrota_03.png", "yani/reaccion_impacto_01": "yani/reaccion_impacto_01.png", "yani/reaccion_impacto_02": "yani/reaccion_impacto_02.png", "yani/reaccion_impacto_03": "yani/reaccion_impacto_03.png", "yani/reaccion_impacto_04": "yani/reaccion_impacto_04.png", "yani/recolectando_gota_01": "yani/recolectando_gota_01.png", "yani/recolectando_gota_02": "yani/recolectando_gota_02.png", "yani/recolectando_gota_03": "yani/recolectando_gota_03.png", "yani/saltando_01": "yani/saltando_01.png", "yani/saltando_02": "yani/saltando_02.png", "yani/saltando_03": "yani/saltando_03.png", "yani/saltando_04": "yani/saltando_04.png", "yani/saltando_05": "yani/saltando_05.png", "yani/saltando_06": "yani/saltando_06.png"};
+const IMGS = {};       // "carpeta/nombre" -> HTMLImageElement (o null si falló)
+let loadDone = 0, loadTotal = 0, assetsReady = false;
+
+function img(key) { return IMGS[key] || null; }
+function framesOf(folder, pattern, skip) {
+  const out = [];
+  for (let i = 1; i <= 40; i++) {
+    const name = pattern + "_" + String(i).padStart(2, "0");
+    if (skip && skip.has(name)) continue;
+    const key = folder + "/" + name;
+    if (!(key in MANIFEST)) break;
+    if (IMGS[key]) out.push(IMGS[key]);
+  }
+  return out;
+}
+function namedFrames(folder, names) {
+  const out = [];
+  for (const n of names) { const im = IMGS[folder + "/" + n]; if (im) out.push(im); }
+  return out;
+}
+/** Conjuntos de animación por personaje, igual que Assets.characterSet. */
+function characterSet(ch) {
+  switch (ch) {
+    case "aqua": return {
+      quieto: framesOf("aqua", "idle_quieto"), caminar: framesOf("aqua", "caminando"),
+      correr: framesOf("aqua", "corriendo"), agachar: framesOf("aqua", "agachado"),
+      saltar: framesOf("aqua", "salto", new Set(["salto_01", "salto_07", "salto_08"])),
+      disparar: framesOf("aqua", "disparando_bolas"),
+      golpe: namedFrames("aqua", ["reaccion_impacto_02", "reaccion_impacto_04", "reaccion_impacto_05"]),
+      caido: namedFrames("aqua", ["reaccion_impacto_11"]),
+      bola: namedFrames("aqua", ["proyectiles_bola_cabello_01", "proyectiles_bola_cabello_02", "proyectiles_bola_cabello_03"])
+    };
+    case "yani": return {
+      quieto: framesOf("yani", "idle"), caminar: framesOf("yani", "caminando"),
+      correr: framesOf("yani", "corriendo"), agachar: framesOf("yani", "agachado"),
+      saltar: framesOf("yani", "saltando"), disparar: framesOf("yani", "disparando"),
+      golpe: namedFrames("yani", ["reaccion_impacto_01", "reaccion_impacto_02", "reaccion_impacto_03"]),
+      caido: namedFrames("yani", ["muerte_derrota_01", "muerte_derrota_02", "muerte_derrota_03"]),
+      bola: namedFrames("yani", ["disparando_proyectil_01", "disparando_proyectil_02", "disparando_proyectil_03"])
+    };
+    case "corvo": return {
+      volar: framesOf("corvo", "flap"), rapido: framesOf("corvo", "flap"),
+      cansado: framesOf("corvo", "flap"), ataque: framesOf("corvo", "wing_attack"),
+      derrota: framesOf("corvo", "defeat"), posado: framesOf("corvo", "idle")
+    };
+    case "monstruo": return {
+      quieto: framesOf("monstruo", "reposo"), caminar: framesOf("monstruo", "caminando"),
+      correr: framesOf("monstruo", "corriendo", new Set(["corriendo_01"])),
+      lanzar: framesOf("monstruo", "carga_basura")
+    };
+    case "hazmat": return {
+      quieto: framesOf("hazmat", "idle"), caminar: framesOf("hazmat", "walk"), correr: framesOf("hazmat", "walk"),
+      lanzar: framesOf("hazmat", "throw_polluted_water_trash"), golpe: framesOf("hazmat", "hit"), derrota: framesOf("hazmat", "defeat")
+    };
+    case "policia": return {
+      quieto: framesOf("policia", "idle"), caminar: framesOf("policia", "walk"), correr: framesOf("policia", "walk"),
+      lanzar: framesOf("policia", "throw"), golpe: framesOf("policia", "hit"), derrota: framesOf("policia", "defeat")
+    };
+    case "robot": return {
+      quieto: framesOf("robot", "idle"), caminar: framesOf("robot", "move"), correr: framesOf("robot", "move"),
+      lanzar: framesOf("robot", "spraying"), golpe: framesOf("robot", "hit"), derrota: framesOf("robot", "defeat")
+    };
+    case "jefe_mascara": return {
+      quieto: framesOf("jefe_mascara", "idle"), caminar: framesOf("jefe_mascara", "walk"), correr: framesOf("jefe_mascara", "walk"),
+      atacar: framesOf("jefe_mascara", "attack"), golpe: framesOf("jefe_mascara", "hit"),
+      derrota: framesOf("jefe_mascara", "defeat"), romper: framesOf("jefe_mascara", "mask_break")
+    };
+    case "jefe_sin_mascara": return {
+      quieto: framesOf("jefe_sin_mascara", "idle"), caminar: framesOf("jefe_sin_mascara", "walk"), correr: framesOf("jefe_sin_mascara", "walk"),
+      atacar: framesOf("jefe_sin_mascara", "attack"), golpe: framesOf("jefe_sin_mascara", "hit"),
+      derrota: framesOf("jefe_sin_mascara", "defeat"), llorar: framesOf("jefe_sin_mascara", "cry")
+    };
+  }
+  return {};
+}
+
+let SETS = {};         // personaje -> { estado -> [imagenes] }
+let SPR = {};          // imágenes sueltas del mundo y del HUD
+function buildSpriteTables() {
+  for (const ch of ["aqua", "yani", "corvo", "monstruo", "hazmat", "policia", "robot", "jefe_mascara", "jefe_sin_mascara"]) {
+    SETS[ch] = characterSet(ch);
+  }
+  SPR = {
+    fondo: img("nivel1/fondo"), titleBg: img("intro/title"),
+    pozo: img("nivel/pozo"), gota: img("nivel/gota"), gotaHud: img("nivel/gota_hud"),
+    corazonLleno: img("hud/corazon_lleno"), corazonVacio: img("hud/corazon_vacio"),
+    basura: img("nivel/basura_toxica"),
+    fondoPaisaje: img("nivel/fondo_paisaje"), fondoToxico: img("nivel/fondo_toxico"),
+    fondoFabrica: img("nivel/fondo_fabrica"), rioToxico: img("nivel/rio_toxico"),
+    banderaMeta: img("nivel/bandera_meta"), burbujas: img("nivel/burbujas"),
+    panorama: img("nivel3/panorama"), charcoLodo: img("nivel3/charco_lodo_grande"),
+    bomba: img("nivel/bomba"),
+    retratos: {
+      aqua: img("nivel/retrato_aqua"), yani: img("nivel/retrato_yani"),
+      corvo: img("nivel/retrato_corvo"), jefe: img("nivel/retrato_jefe"),
+      padre: img("nivel/retrato_padre")
+    },
+    proyectiles: {
+      "nivel/basura_toxica": img("nivel/basura_toxica"),
+      "nivel3/barril_verde_contaminado": img("nivel3/barril_verde_contaminado"),
+      "nivel3/garrafon_h2o_chico": img("nivel3/garrafon_h2o_chico"),
+      "nivel3/charco_agua_contaminada": img("nivel3/charco_agua_contaminada")
+    }
+  };
+}
+function worldImg(nivel, nombre) {
+  const carpeta = nivel === 2 ? "nivel" : nivel === 3 ? "nivel3" : "nivel1";
+  return img(carpeta + "/" + nombre);
+}
+
+function preloadAssets(done) {
+  const keys = Object.keys(MANIFEST);
+  loadTotal = keys.length; loadDone = 0;
+  if (loadTotal === 0) { assetsReady = true; done(); return; }
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; buildSpriteTables(); assetsReady = true; done(); } };
+  for (const key of keys) {
+    const im = new Image();
+    im.onload = () => { IMGS[key] = im; if (++loadDone >= loadTotal) finish(); };
+    im.onerror = () => { IMGS[key] = null; if (++loadDone >= loadTotal) finish(); };
+    im.src = "assets/" + MANIFEST[key];
+  }
+  // Red de seguridad: si la red va muy lenta, se entra con lo que haya
+  // cargado (los sprites que falten se dibujan como formas simples).
+  setTimeout(finish, 20000);
+}
+// ---------------------------------------------------------------------------
+// Entidades (puerto de juego/entidades.py vía Engine.kt)
+// ---------------------------------------------------------------------------
+class Player {
+  constructor(character, spawnX, spawnY) {
+    this.character = character;
+    this.rect = new RectF(spawnX - C.ANCHO_JUGADOR / 2, spawnY - C.ALTO_JUGADOR, C.ANCHO_JUGADOR, C.ALTO_JUGADOR);
+    this.vx = 0; this.vy = 0; this.facing = 1; this.jumps = 0;
+    this.onGround = false; this.crouched = false;
+    this.vidas = C.VIDAS; this.gotas = 0;
+    this.invulnerable = 0; this.aturdido = 0; this.recarga = 0;
+    this.derrotado = false; this.intocable = false; this.polvoDoble = 0;
+    this.bloqueadoX = false;
+    this.anim = new Anim(animDefsFor(character), "quieto");
+    this.name = character === "yani" ? "YANI" : "AQUA";
+    this.bulletW = character === "yani" ? 92 : 83;
+    this.bulletH = character === "yani" ? 57 : 68;
+  }
+  ajustarAltura(agachar) {
+    if (agachar === this.crouched) return;
+    const abajo = this.rect.bottom;
+    this.rect.h = agachar ? C.ALTO_AGACHADO : C.ALTO_JUGADOR;
+    this.rect.y = abajo - this.rect.h;
+    this.crouched = agachar;
+  }
+  controlar(input, engine) {
+    if (this.derrotado || this.aturdido > 0) { this.vx = 0; return; }
+    const rapidez = input.run ? C.VELOCIDAD_CORRER : C.VELOCIDAD;
+    const quiereAgachar = input.down && this.onGround;
+    if (quiereAgachar) this.ajustarAltura(true);
+    else if (this.crouched && !engine.hayTecho(this.rect)) this.ajustarAltura(false);
+    const vel = this.crouched ? C.VELOCIDAD_AGACHADO : rapidez;
+    this.vx = 0;
+    if (input.left) { this.vx = -vel; this.facing = -1; }
+    if (input.right) { this.vx = vel; this.facing = 1; }
+  }
+  saltar() {
+    if (this.crouched || this.derrotado || this.aturdido > 0) return false;
+    if (this.onGround) {
+      this.jumps = 1; this.vy = -C.FUERZA_SALTO; this.onGround = false;
+      this.anim.set("saltar", true); return true;
+    }
+    if (this.jumps < C.SALTOS_MAXIMOS) {
+      this.jumps++; this.vy = -C.FUERZA_SALTO_DOBLE;
+      this.anim.set("saltar", true); this.polvoDoble = 18; return true;
+    }
+    return false;
+  }
+  disparar() {
+    if (this.recarga > 0 || this.derrotado || this.aturdido > 0 || this.crouched) return null;
+    this.recarga = C.RECARGA_DISPARO;
+    this.anim.set("disparar", true);
+    const sx = this.rect.centerX + this.facing * 34;
+    const sy = this.rect.centerY - 12;
+    return new Bullet(sx, sy, this.facing, this.bulletW, this.bulletH, this.character);
+  }
+  recibirDano(cantidad, empuje) {
+    if (this.invulnerable > 0 || this.derrotado || this.intocable) return false;
+    this.vidas -= cantidad;
+    this.invulnerable = C.INVULNERABLE;
+    this.aturdido = 22;
+    this.vy = -7; this.vx = empuje;
+    this.anim.set("golpe", true);
+    if (this.vidas <= 0) {
+      this.vidas = 0; this.derrotado = true;
+      this.anim.set("caido", true);
+    }
+    return true;
+  }
+  actualizar(engine) {
+    if (this.recarga > 0) this.recarga--;
+    if (this.invulnerable > 0) this.invulnerable--;
+    if (this.aturdido > 0) { this.aturdido--; this.vx *= 0.9; }
+    this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+    engine.mover(this, this.vx, this.vy);
+    if (this.onGround) this.jumps = 0;
+    if (this.polvoDoble > 0) this.polvoDoble--;
+    if (!this.derrotado && this.aturdido <= 0) {
+      if (!this.onGround) this.anim.set("saltar");
+      else if (this.crouched) this.anim.set("agachar");
+      else if (this.anim.state === "disparar" && !this.anim.finished()) { /* se queda disparando */ }
+      else if (Math.abs(this.vx) > C.VELOCIDAD + 0.5) this.anim.set("correr");
+      else if (Math.abs(this.vx) > 0.2) this.anim.set("caminar");
+      else this.anim.set("quieto");
+    }
+    this.anim.update();
+  }
+}
+
+class Enemy {
+  constructor(data) {
+    this.data = data;
+    this.rect = new RectF(data.x - (62 * data.escala) / 2, 0, 62 * data.escala, 104 * data.escala);
+    this.vx = 0; this.vy = 0; this.facing = -1; this.onGround = false;
+    this.vidaMax = data.vida; this.vida = this.vidaMax;
+    this.vivo = true; this.parpadeo = 0;
+    this.esperaLanzar = 0; this.esperaSalto = 0; this.huyendo = 0;
+    this.bloqueadoX = false; this.huyendoDir = 0; this.sinContacto = false;
+    this.jefe = data.jefe; this.esPersona = data.esPersona;
+    this.anim = new Anim(animDefsFor(data.paquete), "caminar");
+  }
+  recibirDano(cantidad) {
+    if (this.huyendo > 0) return true;
+    this.vida -= cantidad;
+    this.parpadeo = 10;
+    if (this.vida <= 0) {
+      this.vida = 0;
+      if (this.esPersona) { this.huyendo = 150; this.vida = 1; this.sinContacto = true; }
+      else this.vivo = false;
+    }
+    return this.vivo;
+  }
+  lanzar() {
+    const [w, h] = proyectilTamano(this.data.proyectil, this.data.escalaProyectil);
+    const rapidez = this.jefe ? C.ALCANCE_LANZAMIENTO_JEFE : 7.0;
+    return new EBullet(this.rect.centerX, this.rect.centerY - 10, this.facing, w, h, rapidez, -5.5, this.data.carpetaProyectil, this.data.proyectil);
+  }
+  actualizar(engine, players) {
+    if (!this.vivo) return null;
+    if (this.parpadeo > 0) this.parpadeo--;
+    let disparo = null;
+    if (this.huyendo > 0) {
+      this.huyendo--;
+      if (this.huyendoDir === 0) {
+        const vivos = players.filter(p => !p.derrotado);
+        let target = null, best = Infinity;
+        for (const p of vivos) { const d = Math.abs(p.rect.centerX - this.rect.centerX); if (d < best) { best = d; target = p; } }
+        this.huyendoDir = (target && target.rect.centerX < this.rect.centerX) ? 1 : -1;
+      }
+      const sinPisoAdelante = this.onGround && !engine.hayPisoEn(this.rect.centerX + this.huyendoDir * 40, this.rect.bottom);
+      const enBordeMundo = (this.rect.x <= 0 && this.huyendoDir < 0) || (this.rect.x >= engine.LD.largo - this.rect.w && this.huyendoDir > 0);
+      if (sinPisoAdelante || this.bloqueadoX || enBordeMundo) this.huyendoDir *= -1;
+      this.facing = this.huyendoDir;
+      this.vx = C.VELOCIDAD_HUIDA * this.huyendoDir;
+      this.anim.set("correr");
+      this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      engine.mover(this, this.vx, this.vy);
+      this.anim.update();
+      if (this.rect.y > C.ALTO_MUNDO + 200) this.vivo = false;
+      if (this.huyendo <= 0) this.vivo = false;
+      return null;
+    }
+    if (this.jefe) {
+      this.esperaLanzar--;
+      const vivos = players.filter(p => !p.derrotado);
+      let target = null, best = Infinity;
+      for (const p of vivos) { const d = Math.abs(p.rect.centerX - this.rect.centerX); if (d < best) { best = d; target = p; } }
+      const objetivo = target ? target.rect.centerX : this.rect.centerX;
+      if (Math.abs(objetivo - this.rect.centerX) > 90) {
+        this.facing = objetivo > this.rect.centerX ? 1 : -1;
+        const enLimite = (this.rect.x <= this.data.izquierda && this.facing < 0) ||
+          (this.rect.x >= this.data.derecha - this.rect.w && this.facing > 0);
+        if (enLimite) { this.vx = 0; this.anim.set("quieto"); }
+        else { this.vx = C.VELOCIDAD_JEFE * this.facing; this.anim.set("correr"); }
+      } else { this.vx = 0; this.anim.set("quieto"); }
+      if (this.esperaSalto > 0) this.esperaSalto--;
+      if (this.onGround && this.esperaSalto === 0 && target) {
+        const masArriba = target.rect.bottom < this.rect.bottom - 70;
+        const adelante = this.rect.centerX + this.facing * 90;
+        const sinPiso = !engine.hayPisoEn(adelante, this.rect.bottom);
+        if (masArriba || sinPiso || this.bloqueadoX) {
+          this.vy = -C.FUERZA_SALTO_JEFE; this.onGround = false; this.esperaSalto = 26;
+        }
+      }
+      if (this.esperaLanzar <= 0) {
+        this.esperaLanzar = rndInt(90, 161);
+        this.anim.set("lanzar", true);
+        disparo = this.lanzar();
+      }
+    } else {
+      this.vx = C.VELOCIDAD_ENEMIGO * this.facing;
+      if (this.anim.state !== "lanzar" || this.anim.finished()) this.anim.set("caminar");
+      this.esperaLanzar--;
+      if (this.esperaLanzar <= 0) {
+        this.esperaLanzar = rndInt(C.ESPERA_ATAQUE_MIN, C.ESPERA_ATAQUE_MAX + 1);
+        const vivos = players.filter(p => !p.derrotado);
+        let target = null, best = Infinity;
+        for (const p of vivos) { const d = Math.abs(p.rect.centerX - this.rect.centerX); if (d < best) { best = d; target = p; } }
+        if (target) {
+          const distancia = target.rect.centerX - this.rect.centerX;
+          const deFrente = (distancia > 0) === (this.facing > 0);
+          if (deFrente && Math.abs(distancia) < C.ALCANCE_ATAQUE_ENEMIGO) {
+            this.anim.set("lanzar", true);
+            disparo = this.lanzar();
+          }
+        }
+      }
+    }
+    this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+    engine.mover(this, this.vx, this.vy);
+    if (!this.vivo) return disparo;
+    if (!this.jefe) {
+      let giroPorLimite = false;
+      if (this.rect.left <= this.data.izquierda) { this.rect.x = this.data.izquierda; this.facing = 1; giroPorLimite = true; }
+      else if (this.rect.right >= this.data.derecha) { this.rect.x = this.data.derecha - this.rect.w; this.facing = -1; giroPorLimite = true; }
+      if (!giroPorLimite && this.bloqueadoX && this.onGround) this.facing *= -1;
+    } else {
+      this.rect.x = Math.max(this.rect.x, this.data.izquierda);
+      this.rect.x = Math.min(this.rect.x, this.data.derecha - this.rect.w);
+    }
+    this.anim.update();
+    return disparo;
+  }
+}
+
+class Bullet {
+  constructor(x, y, dir, w, h, owner) {
+    this.rect = new RectF(x - 17, y - 17, 34, 34);
+    this.dir = dir; this.imgW = w; this.imgH = h; this.owner = owner || "aqua";
+    this.recorrido = 0; this.viva = true; this.animTime = 0;
+  }
+  actualizar(engine) {
+    const paso = C.VELOCIDAD_BOLA * this.dir;
+    this.rect.x += paso;
+    this.recorrido += Math.abs(paso);
+    this.animTime++;
+    if (this.recorrido > C.ALCANCE_BOLA || engine.chocaConSolido(this.rect)) this.viva = false;
+  }
+}
+
+/** Basura/plumas/garrafones que lanzan los enemigos: caen en arco y giran. */
+class EBullet {
+  constructor(x, y, dir, w, h, rapidez, altura, imgFolder, imgName) {
+    this.rect = new RectF(x - w / 2, y - h / 2, w, h);
+    this.dir = dir;
+    this.vx = rapidez * dir; this.vy = altura;
+    this.giro = 0; this.viva = true;
+    this.imgFolder = imgFolder || "nivel"; this.imgName = imgName || "basura_toxica";
+  }
+  actualizar(engine) {
+    this.vy = Math.min(this.vy + 0.35, C.CAIDA_MAXIMA);
+    // como el original: int(vx) e int(vy), truncado hacia cero cada cuadro
+    this.rect.x += Math.trunc(this.vx);
+    this.rect.y += Math.trunc(this.vy);
+    this.giro = (this.giro - 7) % 360;
+    if (this.rect.top > C.ALTO_MUNDO + 200 || engine.chocaConSolido(this.rect)) this.viva = false;
+  }
+}
+
+class DropState {
+  constructor(x, baseY) {
+    this.rect = new RectF(x - 14.5, baseY - 19, 29, 38);
+    this.baseY = baseY; this.fase = 0; this.viva = true;
+  }
+  actualizar() {
+    if (this.fase === 0) this.fase = Math.random() * 6.28;
+    this.fase += 0.08;
+    this.rect.y = this.baseY - 19 + 7 * Math.sin(this.fase);
+  }
+}
+
+class SpikeState {
+  constructor(data) {
+    this.data = data;
+    this.caja = RF(data.caja);
+    // zona de disparo: más grande que la caja de daño (como en el original)
+    this.cajaDisparo = new RectF(data.x, data.imgY - 70, data.imgW, data.imgH + 140);
+    this.vida = C.VIDA_PELIGRO; this.entero = true; this.rompiendo = 0; this.parpadeo = 0;
+  }
+  recibirDano(cantidad) {
+    if (!this.entero) return false;
+    this.vida -= cantidad;
+    this.parpadeo = 8;
+    if (this.vida <= 0) { this.entero = false; this.rompiendo = 26; return true; }
+    return false;
+  }
+  actualizar() {
+    if (this.parpadeo > 0) this.parpadeo--;
+    if (this.rompiendo > 0) this.rompiendo--;
+  }
+}
+
+/** Tanque verde que explota (Nivel 2). */
+class BombState {
+  constructor(data) {
+    this.data = data;
+    this.rect = new RectF(data.x, data.y, data.w, data.h);
+    this.viva = true; this.entera = true; this.fuego = 0;
+    this.onda = Math.random() * 6.28; this.duracion = 34;
+  }
+  get radio() { return 20 + Math.trunc(70 * (1 - this.fuego / this.duracion)); }
+  explotar() {
+    if (!this.entera) return false;
+    this.entera = false; this.fuego = this.duracion; return true;
+  }
+  actualizar() {
+    this.onda += 0.09;
+    if (!this.entera) { this.fuego--; if (this.fuego <= 0) this.viva = false; }
+  }
+  zonaExplosion() {
+    const r = this.radio;
+    return new RectF(this.rect.centerX - r, this.rect.centerY - r, r * 2, r * 2);
+  }
+}
+
+/** Jefe del Nivel 1: Corvo (5 fases), puerto exacto de JefeCorvo. */
+class BossCorvo {
+  constructor(x, y, arenaIzq, arenaDer, sueloY) {
+    this.kind = "CORVO";
+    this.rect = new RectF(x - 48, y - 39, 96, 78);
+    this.vidaMax = C.VIDA_JEFE_CORVO; this.vida = this.vidaMax;
+    this.despierto = true; this.derrotado = false; this.vivo = true;
+    this.parpadeo = 0; this.sinContacto = false; this.danoContacto = 1;
+    this.fase = 0; this.reloj = 90;
+    this.fx = x; this.fy = y; this.destinoX = x; this.destinoY = y;
+    this.onda = 0; this.vx = 0; this.vy = 0; this.onGround = false; this.bloqueadoX = false;
+    this.izquierda = arenaIzq + 60; this.derecha = arenaDer - 60;
+    this.arriba = 170; this.abajo = sueloY - 90;
+    this.anim = new Anim(animDefsFor("corvo"), "volar");
+    this.titulo = "CORVO, EL GUARDIÁN DEL POZO";
+  }
+  recibirDano(cantidad) {
+    if (this.derrotado) return false;
+    this.vida -= cantidad;
+    this.parpadeo = 10;
+    if (this.vida <= 0) {
+      this.vida = 0; this.derrotado = true; this.vivo = false;
+      this.anim.set("derrota", true);
+    }
+    return this.vivo;
+  }
+  actualizar(engine, target) {
+    if (this.derrotado) {
+      this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      engine.mover(this, 0, this.vy);
+      this.fy = this.rect.centerY;
+      this.anim.update();
+      return null;
+    }
+    if (this.parpadeo > 0) this.parpadeo--;
+    this.onda += 0.08;
+    this.reloj--;
+    let disparo = null;
+    if (this.fase === 0) { // FLOTANDO
+      const lado = target.rect.centerX < this.fx ? 1 : -1;
+      const metaX = target.rect.centerX + lado * 250;
+      const metaY = target.rect.centerY - C.CORVO_ALTURA + 18 * Math.sin(this.onda);
+      this.fx += (metaX - this.fx) * 0.035;
+      this.fy += (metaY - this.fy) * 0.045;
+      this.anim.set("volar");
+      this.sinContacto = false;
+      if (this.reloj <= 0) {
+        if (Math.random() < 0.6) {
+          this.fase = 1; this.reloj = C.CORVO_AVISO;
+          this.destinoX = target.rect.centerX;
+          this.destinoY = target.rect.centerY - 10;
+        } else {
+          this.reloj = 110;
+          this.anim.set("ataque", true);
+          disparo = this.plumas(target);
+        }
+      }
+    } else if (this.fase === 1) { // AVISO
+      this.anim.set("ataque");
+      if (this.reloj <= 0) { this.fase = 2; this.reloj = 50; }
+    } else if (this.fase === 2) { // PICADA
+      this.anim.set("rapido");
+      this.fx += (this.destinoX - this.fx) * 0.16;
+      this.fy += (this.destinoY - this.fy) * 0.16;
+      const llego = Math.abs(this.fx - this.destinoX) < 40 && Math.abs(this.fy - this.destinoY) < 40;
+      if (this.reloj <= 0 || llego) {
+        this.fase = 3; this.reloj = C.CORVO_CANSANCIO;
+        this.sinContacto = true;
+        this.anim.set("cansado", true);
+      }
+    } else if (this.fase === 3) { // CANSADO: ventana para pegarle
+      const metaY = target.rect.centerY - 18;
+      this.fy += (metaY - this.fy) * 0.08;
+      this.fx += Math.sin(this.onda * 2.2) * 0.9;
+      this.anim.set("cansado");
+      if (this.reloj <= 0) { this.fase = 4; this.reloj = 45; this.sinContacto = false; }
+    } else if (this.fase === 4) { // REGRESO
+      this.anim.set("volar");
+      const metaY = target.rect.centerY - C.CORVO_ALTURA - 40;
+      this.fy += (metaY - this.fy) * 0.08;
+      this.fx += (this.fx - target.rect.centerX) * 0.03;
+      if (this.reloj <= 0) {
+        this.fase = 0;
+        this.reloj = rndInt(C.CORVO_DESCANSO_MIN, C.CORVO_DESCANSO_MAX + 1);
+      }
+    }
+    this.fx = clamp(this.fx, this.izquierda, this.derecha);
+    this.fy = clamp(this.fy, this.arriba, this.abajo);
+    this.rect.x = this.fx - this.rect.w / 2;
+    this.rect.y = this.fy - this.rect.h / 2;
+    this.anim.update();
+    return disparo;
+  }
+  plumas(target) {
+    const dir = target.rect.centerX > this.fx ? 1 : -1;
+    return new EBullet(this.rect.centerX, this.rect.centerY, dir, 29, 38, 8.5, -2.0, "nivel", "basura_toxica");
+  }
+}
+
+/** Jefe del Nivel 2: el monstruo de basura es un Enemigo con jefe=true. */
+class BossBasura {
+  constructor(enemy) {
+    this.kind = "BASURA"; this.enemy = enemy; this.despierto = true;
+    this.titulo = "JEFE DE BASURA"; this.danoContacto = 1;
+  }
+  get rect() { return this.enemy.rect; }
+  get vida() { return this.enemy.vida; } set vida(v) { this.enemy.vida = v; }
+  get vidaMax() { return this.enemy.vidaMax; }
+  get vivo() { return this.enemy.vivo; } set vivo(v) { this.enemy.vivo = v; }
+  get derrotado() { return !this.enemy.vivo; } set derrotado(v) { if (v) this.enemy.vivo = false; }
+  get sinContacto() { return this.enemy.sinContacto; } set sinContacto(v) { this.enemy.sinContacto = v; }
+  get parpadeo() { return this.enemy.parpadeo; } set parpadeo(v) { this.enemy.parpadeo = v; }
+  get anim() { return this.enemy.anim; }
+  get vx() { return this.enemy.vx; } set vx(v) { this.enemy.vx = v; }
+  get vy() { return this.enemy.vy; } set vy(v) { this.enemy.vy = v; }
+  get onGround() { return this.enemy.onGround; } set onGround(v) { this.enemy.onGround = v; }
+  get bloqueadoX() { return this.enemy.bloqueadoX; } set bloqueadoX(v) { this.enemy.bloqueadoX = v; }
+  recibirDano(cantidad) { return this.enemy.recibirDano(cantidad); }
+  actualizar(engine, target) { return this.enemy.actualizar(engine, [target]); }
+}
+
+/** Jefe final del Nivel 3: el empresario enmascarado (dos fases). */
+class BossEmpresario {
+  constructor(x, y, arenaIzq, arenaDer) {
+    this.kind = "EMPRESARIO";
+    this.rect = new RectF(x - 40, y - 151, 80, 151);
+    this.vx = 0; this.vy = 0; this.facing = -1; this.onGround = false; this.bloqueadoX = false;
+    this.vidaMax = C.VIDA_JEFE_FINAL; this.vida = this.vidaMax;
+    this.despierto = true; this.derrotado = false; this.vivo = true;
+    this.parpadeo = 0; this.sinContacto = false;
+    this.danoContacto = C.DANO_JEFE_FINAL;
+    this.titulo = "EL EMPRESARIO";
+    this.conMascara = true; this.acabaDeRomper = false; this.rompiendo = 0;
+    this.llorando = false;
+    this.rapidez = C.VELOCIDAD_JEFE_FINAL;
+    this.esperaSalto = 0;
+    this.esperaAtaque = rndInt(C.ESPERA_ATAQUE_JEFE_MIN, C.ESPERA_ATAQUE_JEFE_MAX + 1);
+    this.anim = new Anim(animDefsFor("jefe_mascara"), "quieto");
+    this.arenaIzq = arenaIzq; this.arenaDer = arenaDer;
+  }
+  recibirDano(cantidad) {
+    if (this.derrotado || this.rompiendo > 0) return true;
+    this.vida -= cantidad;
+    this.parpadeo = 10;
+    if (this.conMascara && this.vida <= this.vidaMax / 2) {
+      this.conMascara = false; this.rompiendo = 60; this.acabaDeRomper = true;
+      this.sinContacto = true;
+      this.anim.set("romper", true);
+      return true;
+    }
+    if (this.vida <= 0) {
+      this.vida = 0; this.derrotado = true; this.vivo = false; this.sinContacto = true;
+      this.anim.set("derrota", true);
+    }
+    return this.vivo;
+  }
+  cambiarASinMascara() {
+    this.anim = new Anim(animDefsFor("jefe_sin_mascara"), "quieto");
+    this.sinContacto = false;
+    this.titulo = "TU PADRE";
+    this.rapidez = C.VELOCIDAD_JEFE_FINAL * 1.2;
+  }
+  llorar() { this.llorando = true; this.anim.set("llorar", true); }
+  actualizar(engine, target) {
+    if (this.parpadeo > 0) this.parpadeo--;
+    if (this.rompiendo > 0) {
+      this.rompiendo--;
+      this.vx = 0;
+      this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      engine.mover(this, 0, this.vy);
+      this.anim.update();
+      if (this.rompiendo === 0) this.cambiarASinMascara();
+      return null;
+    }
+    if (this.derrotado || this.llorando) {
+      this.vx = 0;
+      this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      engine.mover(this, 0, this.vy);
+      this.anim.update();
+      return null;
+    }
+    let disparo = null;
+    const objetivo = target.rect.centerX;
+    if (Math.abs(objetivo - this.rect.centerX) > 110) {
+      this.facing = objetivo > this.rect.centerX ? 1 : -1;
+      const enLimite = (this.rect.x <= this.arenaIzq && this.facing < 0) ||
+        (this.rect.x >= this.arenaDer - this.rect.w && this.facing > 0);
+      if (enLimite) {
+        this.vx = 0;
+        if (this.anim.state !== "atacar" || this.anim.finished()) this.anim.set("quieto");
+      } else {
+        this.vx = this.rapidez * this.facing;
+        this.anim.set("correr");
+      }
+    } else {
+      this.vx = 0;
+      if (this.anim.state !== "atacar" || this.anim.finished()) this.anim.set("quieto");
+    }
+    if (this.esperaSalto > 0) this.esperaSalto--;
+    if (this.onGround && this.esperaSalto === 0) {
+      const masArriba = target.rect.bottom < this.rect.bottom - 70;
+      const adelante = this.rect.centerX + this.facing * 95;
+      const sinPiso = !engine.hayPisoEn(adelante, this.rect.bottom);
+      if (masArriba || sinPiso || this.bloqueadoX) {
+        this.vy = -C.FUERZA_SALTO_JEFE; this.onGround = false; this.esperaSalto = 26;
+      }
+    }
+    this.esperaAtaque--;
+    if (this.esperaAtaque <= 0) {
+      this.esperaAtaque = rndInt(C.ESPERA_ATAQUE_JEFE_MIN, C.ESPERA_ATAQUE_JEFE_MAX + 1);
+      this.anim.set("atacar", true);
+      disparo = new EBullet(this.rect.centerX, this.rect.centerY - 16, this.facing, 53, 76, 8.0, -4.0, "nivel3", "garrafon_h2o_chico");
+    }
+    this.vy = Math.min(this.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+    engine.mover(this, this.vx, this.vy);
+    this.rect.x = Math.max(this.rect.x, this.arenaIzq);
+    this.rect.x = Math.min(this.rect.x, this.arenaDer - this.rect.w);
+    this.anim.update();
+    return disparo;
+  }
+}
+
+/** Corvo acompañando al protagonista (niveles 2 y 3). */
+class CorvoCompanion {
+  constructor(x, y) {
+    this.x = x; this.y = y; this.fase = 0;
+    this.escondido = false; this.llevando = false; this.mirando = 1;
+    this.rect = new RectF(x - 30, y - 30, 60, 60);
+    this.anim = new Anim(animDefsFor("corvo"), "volar");
+  }
+  actualizar(jugador) {
+    if (this.escondido) return;
+    const destinoX = jugador.rect.centerX - jugador.facing * 120;
+    const destinoY = jugador.rect.top - 70;
+    this.x += (destinoX - this.x) * 0.055;
+    this.y += (destinoY - this.y) * 0.075;
+    this.fase += 0.07;
+    const movimiento = destinoX - this.x;
+    this.mirando = Math.abs(movimiento) > 30 ? (movimiento > 0 ? 1 : -1) : jugador.facing;
+    this.anim.set(Math.abs(movimiento) > 40 ? "rapido" : "volar");
+    const flote = 7 * Math.sin(this.fase);
+    this.rect.x = this.x - this.rect.w / 2;
+    this.rect.y = this.y + flote - this.rect.h / 2;
+    this.anim.update();
+  }
+  colocar(nx, ny) {
+    this.x = nx; this.y = ny;
+    this.rect.x = nx - this.rect.w / 2;
+    this.rect.y = ny - this.rect.h / 2;
+  }
+}
+
+class Dialogo {
+  constructor(lineas, personaje) {
+    this.lineas = lineas; this.personaje = personaje;
+    this.indice = 0; this.letras = 0;
+    this.activo = lineas.length > 0;
+  }
+  lineaActual() { return (this.activo && this.indice < this.lineas.length) ? this.lineas[this.indice] : null; }
+  nombreActual() {
+    const l = this.lineaActual(); if (!l) return "";
+    return l.quien === "heroe" ? (this.personaje === "yani" ? "YANI" : "AQUA") : l.nombre;
+  }
+  avanzar() {
+    if (!this.activo) return;
+    const frase = this.lineas[this.indice].frase;
+    if (this.letras < frase.length) this.letras = frase.length;
+    else if (this.indice < this.lineas.length - 1) { this.indice++; this.letras = 0; }
+    else this.activo = false;
+  }
+  actualizar() {
+    if (!this.activo) return;
+    const frase = this.lineas[this.indice].frase;
+    if (this.letras < frase.length) this.letras++;
+  }
+  textoVisible() {
+    const l = this.lineaActual(); if (!l) return "";
+    return l.frase.substring(0, Math.min(this.letras, l.frase.length));
+  }
+}
+// ---------------------------------------------------------------------------
+// Motor del juego (puerto de Engine.kt): un nivel a la vez, 60 cuadros/s,
+// mundo de 1280x720, mismas constantes de física del original.
+// Modos: SINGLE, COOP_LOCAL, ONLINE_HOST, ONLINE_CLIENT
+// ---------------------------------------------------------------------------
+class Engine {
+  constructor(mode, p1Char, p2Char, level) {
+    this.mode = mode; this.p1Char = p1Char; this.p2Char = p2Char; this.level = level;
+    this.LD = LEVELS[String(level)] || LEVELS["1"];
+    const LD = this.LD;
+    this.players = [new Player(p1Char, LD.inicioX, LD.sueloY)];
+    if (mode !== "SINGLE") this.players.push(new Player(p2Char, LD.inicioX + 70, LD.sueloY));
+    this.enemies = LD.enemigos.map(e => {
+      const en = new Enemy(e);
+      en.rect.y = this.superficie(e.x) - en.rect.h;
+      en.esperaLanzar = rndInt(120, 241);
+      return en;
+    });
+    this.boss = null;
+    this.bullets = []; this.ebullets = [];
+    this.drops = LD.gotas.map(g => new DropState(g.x, g.y));
+    this.totalGotas = this.drops.length;
+    this.spikes = LD.puas.map(p => new SpikeState(p));
+    this.bombs = LD.bombas.map(b => new BombState(b));
+    this.corvo = level !== 1 ? new CorvoCompanion(LD.inicioX + 70, LD.sueloY - 150) : null;
+    this.camaraX = 0; this.camaraY = 0; this.alzar = 0;
+    this.tick = 0; this.temblor = 0;
+    this.aviso = null; this.avisoTicks = 0;
+    this.dialogo = new Dialogo(LD.dialogoInicio, p1Char);
+    this.dialogoFinal = null;
+    this.dialogoKind = "I";
+    this.snapP1Char = p1Char; this.snapP2Char = p2Char;
+    this.cinematica = null; this.escena = 0; this.relojEscena = 0;
+    this.terminado = false; this.resultado = null; this.fundido = 0;
+    this.jefeAparecio = false; this.presentacion = false;
+    this.mascaraContada = false; this.esperandoMascara = false;
+    this.ambiente = [];
+    for (const x of LD.burbujas) this.ambiente.push([x, Math.random() * 200]);
+    for (const x of LD.humo) this.ambiente.push([x, Math.random() * 200]);
+    this.ultimoSeguro = [LD.inicioX];
+    // sólidos precalculados: plataformas + obstáculos (con su RectF)
+    this._solidos = LD.plataformas.concat(LD.obstaculos).map(p => RF(p.solido));
+    this._unaVia = LD.unaVia.map(p => RF(p.solido));
+  }
+  get p1() { return this.players[0]; }
+  get p2() { return this.players.length > 1 ? this.players[1] : null; }
+
+  // -- colisiones (port de NivelBase.mover) --
+  solidos() { return this._solidos; }
+  chocaConSolido(rect) { return this._solidos.some(s => rect.intersects(s)); }
+  hayPisoEn(x, yPies, profundidad) {
+    const sonda = new RectF(x - 6, yPies - 8, 12, profundidad === undefined ? 160 : profundidad);
+    if (this.chocaConSolido(sonda)) return true;
+    return this._unaVia.some(s => sonda.intersects(s));
+  }
+  hayTecho(rect) {
+    const prueba = new RectF(rect.x, rect.bottom - C.ALTO_JUGADOR, rect.w, C.ALTO_JUGADOR);
+    return this.chocaConSolido(prueba);
+  }
+  mover(actor, vx, vy) {
+    const rect = actor.rect;
+    const sols = this._solidos;
+    const dx = rpe(vx);
+    const xAntes = rect.x;
+    rect.x += dx;
+    for (const s of sols) {
+      if (rect.intersects(s)) {
+        if (vx > 0) rect.x = s.left - rect.w;
+        else if (vx < 0) rect.x = s.right;
+      }
+    }
+    actor.bloqueadoX = dx !== 0 && rect.x !== xAntes + dx;
+    rect.x = clamp(rect.x, 0, this.LD.largo - rect.w);
+    const abajoAntes = rect.bottom;
+    rect.y += rpe(vy);
+    actor.onGround = false;
+    for (const s of sols) {
+      if (rect.intersects(s)) {
+        if (vy > 0) { rect.y = s.top - rect.h; actor.onGround = true; actor.vy = 0; }
+        else if (vy < 0) { rect.y = s.bottom; actor.vy = 0; }
+      }
+    }
+    if (vy > 0) {
+      for (const s of this._unaVia) {
+        if (rect.intersects(s) && abajoAntes <= s.top + 8) {
+          rect.y = s.top - rect.h; actor.onGround = true; actor.vy = 0;
+        }
+      }
+    }
+  }
+  superficie(x) {
+    for (const s of this.LD.superficies) if (x >= s.left && x <= s.right) return s.y;
+    return this.LD.sueloY;
+  }
+
+  // -- jefe --
+  revisarJefe() {
+    if (this.jefeAparecio) return;
+    const LD = this.LD;
+    const vivos = this.players.filter(p => !p.derrotado);
+    if (!vivos.length) return;
+    const avance = Math.max(...vivos.map(p => p.rect.centerX));
+    if (avance <= LD.arenaIzq) return;
+    if (LD.jefeTipo === "CORVO") {
+      if (!this.presentacion) {
+        this.presentacion = true;
+        const b = new BossCorvo(LD.arenaIzq + 420, 330, LD.arenaIzq, LD.arenaDer, LD.sueloY);
+        b.despierto = false;
+        this.boss = b;
+        this.dialogo = new Dialogo(LD.dialogoEncuentro, this.p1Char);
+        this.dialogoKind = "E";
+        for (const pl of this.players) { pl.vx = 0; pl.facing = 1; }
+        return;
+      }
+      this.dialogo = null;
+      this.jefeAparecio = true;
+      if (this.boss) this.boss.despierto = true;
+      this.temblor = 36; this.aviso = "¡POR EL AGUA!"; this.avisoTicks = 150;
+    } else if (LD.jefeTipo === "BASURA") {
+      const en = new Enemy({
+        x: LD.jefeX, izquierda: 60, derecha: LD.arenaDer, paquete: "monstruo",
+        proyectil: "basura_toxica", carpetaProyectil: "nivel", escalaProyectil: 0.55,
+        esPersona: false, jefe: true, vida: C.VIDA_JEFE_BASURA, escala: C.ESCALA_JEFE
+      });
+      en.rect.y = this.superficie(LD.jefeX) - en.rect.h;
+      en.esperaLanzar = rndInt(90, 161);
+      this.boss = new BossBasura(en);
+      this.jefeAparecio = true;
+      this.temblor = 44; this.aviso = "JEFE DE BASURA"; this.avisoTicks = 150;
+    } else if (LD.jefeTipo === "EMPRESARIO") {
+      if (!this.presentacion) {
+        this.presentacion = true;
+        const b = new BossEmpresario(LD.jefeX, LD.sueloY, LD.arenaIzq, LD.arenaDer);
+        b.despierto = false;
+        this.boss = b;
+        this.dialogo = new Dialogo(LD.dialogoEncuentro, this.p1Char);
+        this.dialogoKind = "E";
+        for (const pl of this.players) { pl.vx = 0; pl.facing = 1; }
+        return;
+      }
+      this.dialogo = null;
+      this.jefeAparecio = true;
+      if (this.boss) this.boss.despierto = true;
+      this.temblor = 40; this.aviso = "¡POR EL AGUA DE TODOS!"; this.avisoTicks = 150;
+    }
+  }
+  alVencerJefe() {
+    this.temblor = 40; this.aviso = null;
+    this.bullets = []; this.ebullets = [];
+    this.dialogo = null;
+    for (const pl of this.players) {
+      pl.intocable = true; pl.invulnerable = 0;
+      if (!pl.onGround || pl.rect.top > C.ALTO_MUNDO) this.plantarEnSuelo(pl);
+    }
+    const t = this.LD.jefeTipo;
+    if (t === "CORVO") { this.cinematica = "final"; this.escena = 0; this.relojEscena = 70; }
+    else if (t === "BASURA") {
+      this.temblor = 50;
+      const pl = this.p1;
+      if (!pl.onGround || pl.rect.top > C.ALTO_MUNDO) this.plantarEnSuelo(pl);
+      pl.derrotado = false;
+      pl.anim.set("caido", true);
+      pl.vx = 0;
+      this.cinematica = "rescate"; this.escena = 0; this.relojEscena = 60;
+    } else {
+      this.temblor = 50;
+      this.cinematica = "cierre"; this.escena = 0; this.relojEscena = 80;
+    }
+  }
+  plantarEnSuelo(pl) {
+    let destino = this.LD.puntosSeguros[0];
+    for (const p of this.LD.puntosSeguros) if (p <= pl.rect.centerX) destino = p;
+    const suelo = this.superficie(destino);
+    pl.rect.x = destino - pl.rect.w / 2;
+    pl.rect.y = suelo - pl.rect.h;
+    pl.vx = 0; pl.vy = 0; pl.onGround = true;
+  }
+  caminarHasta(destino, rapidez) {
+    rapidez = rapidez === undefined ? 2.4 : rapidez;
+    const jugador = this.p1;
+    const distancia = destino - jugador.rect.centerX;
+    if (Math.abs(distancia) > 10) {
+      jugador.facing = distancia > 0 ? 1 : -1;
+      jugador.vx = rapidez * jugador.facing;
+      jugador.anim.set("caminar");
+      const adelante = jugador.rect.centerX + jugador.facing * 58;
+      if (jugador.onGround && !this.hayPisoEn(adelante, jugador.rect.bottom)) jugador.saltar();
+    } else {
+      jugador.vx = 0;
+      jugador.anim.set("quieto");
+    }
+    this.mover(jugador, jugador.vx, jugador.vy);
+    if (jugador.rect.top > this.LD.sueloY + 140) this.plantarEnSuelo(jugador);
+    return Math.abs(destino - jugador.rect.centerX) <= 10;
+  }
+  actualizarCinematica() {
+    if (this.cinematica === "rescate") this.actualizarRescate();
+    else if (this.cinematica === "cierre") this.actualizarCierre();
+    else this.actualizarFinal();
+  }
+  actualizarFinal() {
+    for (const pl of this.players) pl.actualizar(this);
+    const b = this.boss;
+    if (b && this.escena <= 1 && b.derrotado) {
+      b.vy = Math.min(b.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      this.mover(b, 0, b.vy);
+      if (b instanceof BossCorvo) b.fy = b.rect.centerY;
+      b.anim.update();
+    }
+    if (this.temblor > 0) this.temblor--;
+    if (this.escena === 0) {
+      this.relojEscena--;
+      if (this.relojEscena <= 0) { this.escena = 1; this.dialogoFinal = new Dialogo(this.LD.dialogoFinal, this.p1Char); }
+    } else if (this.escena === 1) {
+      if (this.dialogoFinal) this.dialogoFinal.actualizar();
+      if (this.dialogoFinal && !this.dialogoFinal.activo) { this.escena = 2; this.relojEscena = 0; }
+    } else if (this.escena === 2) {
+      this.relojEscena++;
+      if (this.relojEscena > 55) this.escena = 3;
+    } else if (this.escena === 3) {
+      this.fundido += 7;
+      if (this.fundido >= 255) { this.terminado = true; this.resultado = "ganado"; }
+    }
+    this.moverCamara();
+  }
+  actualizarRescate() {
+    const pl = this.p1, cv = this.corvo;
+    if (this.temblor > 0) this.temblor--;
+    if (this.escena === 0) {
+      pl.vy = Math.min(pl.vy + C.GRAVEDAD, C.CAIDA_MAXIMA);
+      this.mover(pl, 0, pl.vy);
+      pl.anim.update();
+      if (cv) cv.actualizar(pl);
+      this.relojEscena--;
+      if (this.relojEscena <= 0) { this.escena = 1; this.dialogoFinal = new Dialogo(this.LD.dialogoFinal, this.p1Char); }
+    } else if (this.escena === 1) {
+      if (this.dialogoFinal) this.dialogoFinal.actualizar();
+      if (cv) cv.actualizar(pl);
+      if (this.dialogoFinal && !this.dialogoFinal.activo) { this.escena = 2; this.relojEscena = 0; }
+    } else if (this.escena === 2) {
+      this.relojEscena++;
+      if (cv) {
+        const metaX = pl.rect.centerX, metaY = pl.rect.top - 30;
+        cv.x += (metaX - cv.x) * 0.10;
+        cv.y += (metaY - cv.y) * 0.10;
+        cv.anim.set("volar");
+        cv.rect.x = cv.x - cv.rect.w / 2;
+        cv.rect.y = cv.y - cv.rect.h / 2;
+        cv.anim.update();
+        if (Math.abs(cv.x - metaX) < 16 && this.relojEscena > 30) {
+          this.escena = 3; this.relojEscena = 0; cv.llevando = true;
+        }
+      } else { this.escena = 3; this.relojEscena = 0; }
+    } else if (this.escena === 3) {
+      this.relojEscena++;
+      if (cv) {
+        cv.x -= 1.4 + this.relojEscena * 0.14;
+        cv.y -= 0.6 + this.relojEscena * 0.055;
+        cv.mirando = -1;
+        cv.anim.set("rapido");
+        cv.rect.x = cv.x - cv.rect.w / 2;
+        cv.rect.y = cv.y - cv.rect.h / 2;
+        cv.anim.update();
+        pl.rect.x = cv.rect.centerX + 12 - pl.rect.w / 2;
+        pl.rect.y = cv.rect.bottom + 40 - pl.rect.h;
+        pl.facing = -1;
+        const fuera = (cv.rect.right - this.camaraX < -160 || cv.rect.bottom < -160);
+        if (fuera || this.relojEscena > 400) {
+          this.fundido += 6;
+          if (this.fundido >= 255) { this.terminado = true; this.resultado = "ganado"; }
+        }
+      } else {
+        this.fundido += 6;
+        if (this.fundido >= 255) { this.terminado = true; this.resultado = "ganado"; }
+      }
+    }
+    this.moverCamara();
+  }
+  actualizarCierre() {
+    const pl = this.p1, b = this.boss;
+    if (this.temblor > 0) this.temblor--;
+    pl.actualizar(this);
+    if (this.corvo) this.corvo.actualizar(pl);
+    if (b) b.actualizar(this, pl);
+    if (this.escena === 0) {
+      this.relojEscena--;
+      if (this.relojEscena <= 0) {
+        if (b instanceof BossEmpresario) b.llorar();
+        this.escena = 1;
+        this.dialogoFinal = new Dialogo(this.LD.dialogoFinal, this.p1Char);
+      }
+    } else if (this.escena === 1) {
+      if (this.dialogoFinal) this.dialogoFinal.actualizar();
+      if (this.dialogoFinal && !this.dialogoFinal.activo) { this.escena = 2; this.relojEscena = 0; }
+    } else if (this.escena === 2) {
+      this.relojEscena++;
+      if (b) {
+        const destino = b.rect.centerX - 110;
+        if (this.caminarHasta(destino, 2.2) || this.relojEscena > 240) {
+          pl.facing = b.rect.centerX > pl.rect.centerX ? 1 : -1;
+        }
+      }
+      if (this.relojEscena > 220) {
+        this.fundido += 4;
+        if (this.fundido >= 255) { this.terminado = true; this.resultado = "ganado"; }
+      }
+    }
+    this.moverCamara();
+  }
+
+  // -- cuadro principal --
+  update(p1Input, p2Input) {
+    p2Input = p2Input || newInput();
+    this.tick++;
+    const charla = this.dialogoFinal || this.dialogo;
+    if (charla && charla.activo) {
+      charla.actualizar();
+      if (this.corvo) this.corvo.actualizar(this.p1);
+      this.moverCamara();
+      return;
+    }
+    if (this.cinematica) {
+      this.actualizarAlzado();
+      this.actualizarCinematica();
+      for (const pl of this.players) if (pl.rect.top > C.ALTO_MUNDO + 200) this.plantarEnSuelo(pl);
+      return;
+    }
+    if (this.terminado) return;
+    if (this.temblor > 0) this.temblor--;
+    if (this.aviso) { this.avisoTicks--; if (this.avisoTicks <= 0) this.aviso = null; }
+
+    const p1 = this.p1;
+    p1.controlar(p1Input, this);
+    if (p1Input.jumpPressed) p1.saltar();
+    if (p1Input.shootPressed) { const b = p1.disparar(); if (b) this.bullets.push(b); }
+    p1.actualizar(this);
+    const p2v = this.p2;
+    if (p2v) {
+      p2v.controlar(p2Input, this);
+      if (p2Input.jumpPressed) p2v.saltar();
+      if (p2Input.shootPressed) { const b = p2v.disparar(); if (b) this.bullets.push(b); }
+      p2v.actualizar(this);
+    }
+    if (this.corvo) this.corvo.actualizar(p1);
+
+    this.revisarJefe();
+    this.actualizarEnemigos();
+    this.actualizarDisparos();
+    this.actualizarGotas();
+    this.actualizarBombas();
+    this.revisarEscenario();
+    this.actualizarExtra();
+    this.actualizarAmbiente();
+    this.actualizarAlzado();
+    this.moverCamara();
+
+    // derrota: todos los jugadores caídos (sin revive, como la v1.1.5+)
+    const vivos = this.players.filter(p => !p.derrotado);
+    if (vivos.length === 0) {
+      const caidos = this.players.every(p => p.anim.state === "caido" && p.anim.finished());
+      if (caidos) {
+        this.fundido += 4;
+        if (this.fundido >= 255) { this.terminado = true; this.resultado = "perdido"; }
+      }
+    }
+  }
+  actualizarExtra() {
+    const b = this.boss;
+    if (!(b instanceof BossEmpresario)) return;
+    if (b.acabaDeRomper && !this.mascaraContada) {
+      b.acabaDeRomper = false;
+      this.esperandoMascara = true;
+      this.temblor = 44;
+      this.bullets = []; this.ebullets = [];
+      this.p1.vx = 0;
+    }
+    if (this.esperandoMascara && b.rompiendo <= 0) {
+      this.esperandoMascara = false;
+      this.mascaraContada = true;
+      this.dialogo = new Dialogo(this.LD.dialogoMascara, this.p1Char);
+      this.dialogoKind = "M";
+    }
+  }
+  actualizarAmbiente() {
+    for (let i = 0; i < this.ambiente.length; i++) {
+      let a = this.ambiente[i][1] + 0.7;
+      if (a > 260) a = 0;
+      this.ambiente[i][1] = a;
+    }
+  }
+  actualizarAlzado() {
+    const charla = this.dialogoFinal || this.dialogo;
+    const hablando = charla && charla.activo;
+    const objetivo = hablando ? 150 : 0;
+    this.alzar += (objetivo - this.alzar) * 0.08;
+  }
+  actualizarEnemigos() {
+    const activos = this.players.filter(p => !p.derrotado);
+    for (const en of this.enemies) {
+      if (!en.vivo) continue;
+      if (!activos.length) continue;
+      if (Math.abs(en.rect.centerX - activos[0].rect.centerX) > 1400) continue;
+      const disparo = en.actualizar(this, this.players);
+      if (disparo) this.ebullets.push(disparo);
+      if (en.sinContacto) continue;
+      for (const pl of activos) {
+        if (en.rect.intersects(pl.rect)) {
+          const empuje = pl.rect.centerX > en.rect.centerX ? 7 : -7;
+          pl.recibirDano(C.DANO_ENEMIGO, empuje);
+        }
+      }
+    }
+    const b = this.boss;
+    if (b && b.vivo && b.despierto) {
+      let target = null, best = Infinity;
+      for (const p of this.players) {
+        if (p.derrotado) continue;
+        const d = Math.abs(p.rect.centerX - b.rect.centerX);
+        if (d < best) { best = d; target = p; }
+      }
+      if (target) {
+        const disparo = b.actualizar(this, target);
+        if (disparo) this.ebullets.push(disparo);
+        if (!b.sinContacto && b.rect.intersects(target.rect)) {
+          const empuje = target.rect.centerX > b.rect.centerX ? 11 : -11;
+          target.recibirDano(b.danoContacto, empuje);
+        }
+      }
+    }
+  }
+  actualizarDisparos() {
+    let jefeVencidoAhora = false;
+    this.bullets = this.bullets.filter(bola => {
+      bola.actualizar(this);
+      if (!bola.viva) return false;
+      for (const en of this.enemies) {
+        if (en.vivo && bola.rect.intersects(en.rect)) {
+          const seguiaVivo = en.vivo && en.huyendo <= 0;
+          en.recibirDano(1);
+          bola.viva = false;
+          if (seguiaVivo && (!en.vivo || en.huyendo > 0)) this.soltarGotas(en.rect.centerX, en.rect.top + 10, 2);
+          break;
+        }
+      }
+      if (bola.viva) {
+        for (const sp of this.spikes) {
+          if (sp.entero && bola.rect.intersects(sp.cajaDisparo)) {
+            bola.viva = false;
+            if (sp.recibirDano(1)) this.soltarGotas(sp.caja.centerX, sp.caja.top + 10, 2);
+            break;
+          }
+        }
+      }
+      const b = this.boss;
+      if (bola.viva && b && b.vivo && bola.rect.intersects(b.rect)) {
+        b.recibirDano(1);
+        bola.viva = false;
+        this.temblor = 8;
+        if (!b.vivo) jefeVencidoAhora = true;
+      }
+      return bola.viva;
+    });
+    this.ebullets = this.ebullets.filter(pr => {
+      pr.actualizar(this);
+      if (!pr.viva) return false;
+      for (const pl of this.players) {
+        if (!pl.derrotado && pr.rect.intersects(pl.rect)) {
+          const empuje = pr.vx > 0 ? 8 : -8;
+          pl.recibirDano(1, empuje);
+          return false;
+        }
+      }
+      return true;
+    });
+    if (jefeVencidoAhora) this.alVencerJefe();
+  }
+  actualizarBombas() {
+    for (const bomba of this.bombs) {
+      if (!bomba.viva) continue;
+      bomba.actualizar();
+      if (bomba.entera) {
+        for (let i = 0; i < this.bullets.length; i++) {
+          const bola = this.bullets[i];
+          if (bola.viva && bola.rect.intersects(bomba.rect)) {
+            bomba.explotar();
+            bola.viva = false;
+            this.bullets.splice(i, 1);
+            this.temblor = Math.max(this.temblor, 10);
+            this.soltarGotas(bomba.rect.centerX, bomba.rect.top + 10, 2);
+            break;
+          }
+        }
+      }
+      if (bomba.entera) {
+        for (const pl of this.players) {
+          if (!pl.derrotado && bomba.rect.intersects(pl.rect)) {
+            bomba.explotar();
+            this.temblor = Math.max(this.temblor, 16);
+            const empuje = pl.rect.centerX > bomba.rect.centerX ? 9 : -9;
+            pl.recibirDano(C.DANO_BOMBA, empuje);
+            break;
+          }
+        }
+      } else if (bomba.fuego > bomba.duracion - 8) {
+        const zona = bomba.zonaExplosion();
+        for (const pl of this.players) {
+          if (!pl.derrotado && zona.intersects(pl.rect)) {
+            const empuje = pl.rect.centerX > bomba.rect.centerX ? 9 : -9;
+            pl.recibirDano(C.DANO_BOMBA, empuje);
+          }
+        }
+        for (const en of this.enemies) if (en.vivo && zona.intersects(en.rect)) en.recibirDano(2);
+      }
+    }
+    this.bombs = this.bombs.filter(b => b.viva);
+  }
+  soltarGotas(centroX, arriba, cuantas) {
+    for (let i = 0; i < cuantas; i++) {
+      const sep = (i - (cuantas - 1) / 2) * 46;
+      this.drops.push(new DropState(Math.trunc(centroX + sep), Math.trunc(arriba)));
+      this.totalGotas++;
+    }
+  }
+  actualizarGotas() {
+    for (const sp of this.spikes) sp.actualizar();
+    for (const g of this.drops) {
+      if (!g.viva) continue;
+      g.actualizar();
+      for (const pl of this.players) {
+        if (!pl.derrotado && g.rect.intersects(pl.rect)) {
+          g.viva = false;
+          pl.gotas++;
+          if (pl.gotas % 10 === 0 && pl.vidas < C.VIDAS) {
+            pl.vidas++;
+            this.aviso = "+1 CORAZÓN"; this.avisoTicks = 110;
+          }
+          break;
+        }
+      }
+    }
+  }
+  revisarEscenario() {
+    for (const pl of this.players) {
+      if (pl.derrotado) continue;
+      for (const sp of this.spikes) {
+        if (sp.entero && pl.rect.intersects(sp.caja)) {
+          const empuje = pl.facing < 0 ? 8 : -8;
+          pl.recibirDano(C.DANO_PUAS, empuje);
+          break;
+        }
+      }
+      const rio = new RectF(0, this.LD.rioTop, this.LD.largo, 300);
+      if (pl.rect.intersects(rio)) {
+        pl.recibirDano(C.DANO_RIO, 0);
+        this.regresarALugarSeguro(pl);
+      } else if (pl.rect.top > C.ALTO_MUNDO + this.LD.sueloY) {
+        pl.recibirDano(C.DANO_RIO, 0);
+        this.regresarALugarSeguro(pl);
+      }
+      if (pl.onGround) {
+        const idx = this.players.indexOf(pl);
+        for (const punto of this.LD.puntosSeguros) {
+          if (punto <= pl.rect.centerX) {
+            if (this.ultimoSeguro.length <= idx) this.ultimoSeguro.push(punto);
+            else this.ultimoSeguro[idx] = punto;
+          }
+        }
+      }
+    }
+  }
+  regresarALugarSeguro(pl) {
+    const idx = this.players.indexOf(pl);
+    const seguro = idx < this.ultimoSeguro.length ? this.ultimoSeguro[idx] : this.LD.inicioX;
+    pl.rect.x = seguro - pl.rect.w / 2;
+    pl.rect.y = (this.LD.sueloY - 10) - pl.rect.h;
+    pl.vy = 0; pl.vx = 0;
+  }
+  moverCamara() {
+    const activos = this.players.filter(p => !p.derrotado);
+    const centro = activos.length
+      ? activos.reduce((a, p) => a + p.rect.centerX, 0) / activos.length
+      : this.p1.rect.centerX;
+    let objetivoX = centro - C.ANCHO_MUNDO / 2;
+    objetivoX = clamp(objetivoX, 0, this.LD.largo - C.ANCHO_MUNDO);
+    this.camaraX += (objetivoX - this.camaraX) * 0.12;
+    this.camaraY = 0;
+  }
+  shakeOffset() {
+    if (this.temblor > 0) return [rndInt(-5, 6), rndInt(-3, 4)];
+    return [0, 0];
+  }
+  avanzarDialogo() {
+    const d = this.dialogoFinal || this.dialogo;
+    if (d) d.avanzar();
+  }
+
+  // -- red: instantáneas (formato EXACTO de la APK v1.2, ver Engine.kt) --
+  snapshot() {
+    let s = "SN|" + this.level + "|" + this.tick + "|";
+    for (const pl of this.players) {
+      s += `${Math.trunc(pl.rect.x)},${Math.trunc(pl.rect.y)},${pl.facing},${pl.anim.state},${pl.anim.time},${pl.vidas},${pl.gotas},${pl.derrotado ? 1 : 0},${pl.crouched ? 1 : 0},${pl.invulnerable};`;
+    }
+    s += "|";
+    const b = this.boss;
+    if (b) {
+      if (b instanceof BossCorvo) {
+        s += `1,${Math.trunc(b.fx)},${Math.trunc(b.fy)},${b.fase},${b.vida},${b.despierto ? 1 : 0},${b.derrotado ? 1 : 0},${b.vivo ? 1 : 0}`;
+      } else if (b instanceof BossBasura) {
+        s += `2,${Math.trunc(b.rect.x)},${Math.trunc(b.rect.y)},${b.vida},${b.despierto ? 1 : 0},${b.derrotado ? 1 : 0},${b.vivo ? 1 : 0},${b.enemy.facing}`;
+      } else if (b instanceof BossEmpresario) {
+        s += `3,${Math.trunc(b.rect.x)},${Math.trunc(b.rect.y)},${b.vida},${b.despierto ? 1 : 0},${b.derrotado ? 1 : 0},${b.vivo ? 1 : 0},${b.conMascara ? 1 : 0},${b.rompiendo},${b.llorando ? 1 : 0},${b.sinContacto ? 1 : 0}`;
+      }
+    } else s += "-";
+    s += "|";
+    for (const en of this.enemies) {
+      s += `${Math.trunc(en.rect.x)},${Math.trunc(en.rect.y)},${en.vivo ? 1 : 0},${en.anim.state},${en.huyendo};`;
+    }
+    s += "|";
+    let mask = "", acc = 0, bits = 0;
+    for (const g of this.drops) {
+      acc = (acc << 1) | (g.viva ? 1 : 0);
+      bits++;
+      if (bits === 4) { mask += acc.toString(16); acc = 0; bits = 0; }
+    }
+    if (bits > 0) { acc = acc << (4 - bits); mask += acc.toString(16); }
+    s += mask + "|";
+    for (const bl of this.bullets) s += `${Math.trunc(bl.rect.centerX)},${Math.trunc(bl.rect.centerY)},${bl.dir};`;
+    s += "|";
+    for (const eb of this.ebullets) s += `${Math.trunc(eb.rect.centerX)},${Math.trunc(eb.rect.centerY)},${eb.imgFolder},${eb.imgName};`;
+    s += "|";
+    for (const sp of this.spikes) s += sp.entero ? "1" : "0";
+    s += "|";
+    for (const bo of this.bombs) s += !bo.viva ? "0" : bo.entera ? "1" : "2";
+    s += "|";
+    const cv = this.corvo;
+    s += cv ? `${Math.trunc(cv.x)},${Math.trunc(cv.y)},${cv.llevando ? 1 : 0}` : "-";
+    s += "|" + Math.trunc(this.camaraX);
+    s += "|";
+    const d = this.dialogoFinal || this.dialogo;
+    if (d && d.activo) {
+      const cual = this.dialogoFinal ? "F" : "D";
+      const tipo = this.dialogoFinal ? "" : "," + this.dialogoKind;
+      s += `${cual}${tipo},${d.indice},${d.letras}`;
+    } else s += "-";
+    s += "|" + (this.aviso || "");
+    s += "|" + (this.resultado || "");
+    s += "|" + this.temblor;
+    s += "|" + (this.cinematica || "");
+    s += "|" + this.p1Char + "|" + this.p2Char;
+    return s;
+  }
+  applySnapshot(str) {
+    const parts = str.split("|");
+    if (parts.length < 18 || parts[0] !== "SN") return;
+    this.tick = parseInt(parts[2]) || this.tick;
+    const pls = parts[3].split(";").filter(x => x.length);
+    for (let i = 0; i < pls.length && i < this.players.length; i++) {
+      const f = pls[i].split(",");
+      if (f.length < 9) continue;
+      const pl = this.players[i];
+      pl.rect.x = parseFloat(f[0]); pl.rect.y = parseFloat(f[1]);
+      pl.facing = parseInt(f[2]);
+      pl.anim.set(f[3]); pl.anim.setTime(parseInt(f[4]) || 0);
+      pl.vidas = parseInt(f[5]); pl.gotas = parseInt(f[6]);
+      pl.derrotado = f[7] === "1";
+      pl.crouched = f[8] === "1";
+      pl.invulnerable = f.length > 9 ? (parseInt(f[9]) || 0) : 0;
+    }
+    const bf = parts[4];
+    if (bf !== "-") {
+      const f = bf.split(",");
+      const kind = parseInt(f[0]) || 0;
+      const kindName = kind === 1 ? "CORVO" : kind === 2 ? "BASURA" : kind === 3 ? "EMPRESARIO" : null;
+      if (!this.boss || this.boss.kind !== kindName) {
+        if (kind === 1) this.boss = new BossCorvo(0, 0, this.LD.arenaIzq, this.LD.arenaDer, this.LD.sueloY);
+        else if (kind === 2) {
+          const en = new Enemy({
+            x: this.LD.jefeX, izquierda: 60, derecha: this.LD.arenaDer, paquete: "monstruo",
+            proyectil: "basura_toxica", carpetaProyectil: "nivel", escalaProyectil: 0.55,
+            esPersona: false, jefe: true, vida: C.VIDA_JEFE_BASURA, escala: C.ESCALA_JEFE
+          });
+          en.rect.y = this.superficie(this.LD.jefeX) - en.rect.h;
+          this.boss = new BossBasura(en);
+        } else if (kind === 3) this.boss = new BossEmpresario(this.LD.jefeX, this.LD.sueloY, this.LD.arenaIzq, this.LD.arenaDer);
+        else this.boss = null;
+      }
+      const b = this.boss;
+      if (b instanceof BossCorvo) {
+        b.fx = parseFloat(f[1]); b.fy = parseFloat(f[2]);
+        b.fase = parseInt(f[3]); b.vida = parseInt(f[4]);
+        b.despierto = f[5] === "1"; b.derrotado = f[6] === "1"; b.vivo = f[7] === "1";
+        b.rect.x = b.fx - b.rect.w / 2; b.rect.y = b.fy - b.rect.h / 2;
+      } else if (b instanceof BossBasura) {
+        b.enemy.rect.x = parseFloat(f[1]); b.enemy.rect.y = parseFloat(f[2]);
+        b.vida = parseInt(f[3]);
+        b.despierto = f[4] === "1"; b.derrotado = f[5] === "1"; b.vivo = f[6] === "1";
+        b.enemy.facing = f[7] !== undefined ? (parseInt(f[7]) || -1) : -1;
+      } else if (b instanceof BossEmpresario) {
+        b.rect.x = parseFloat(f[1]); b.rect.y = parseFloat(f[2]);
+        b.vida = parseInt(f[3]);
+        b.despierto = f[4] === "1"; b.derrotado = f[5] === "1"; b.vivo = f[6] === "1";
+        const sinMascara = f[7] === "0";
+        if (sinMascara && b.conMascara) b.cambiarASinMascara();
+        b.conMascara = f[7] === "1";
+        b.rompiendo = parseInt(f[8]) || 0;
+        b.llorando = f[9] === "1";
+        b.sinContacto = f[10] === "1";
+      }
+    }
+    const ens = parts[5].split(";").filter(x => x.length);
+    for (let i = 0; i < ens.length && i < this.enemies.length; i++) {
+      const f = ens[i].split(",");
+      if (f.length < 4) continue;
+      const en = this.enemies[i];
+      en.rect.x = parseFloat(f[0]); en.rect.y = parseFloat(f[1]);
+      en.vivo = f[2] === "1";
+      en.anim.set(f[3]);
+      en.huyendo = f[4] !== undefined ? (parseInt(f[4]) || 0) : 0;
+    }
+    const mask = parts[6];
+    for (let i = 0; i < this.drops.length; i++) {
+      const hexIdx = Math.floor(i / 4);
+      if (hexIdx >= mask.length) break;
+      const nibble = parseInt(mask[hexIdx], 16) || 0;
+      const bit = (nibble >> (3 - (i % 4))) & 1;
+      this.drops[i].viva = bit === 1;
+    }
+    this.bullets = [];
+    for (const chunk of parts[7].split(";").filter(x => x.length)) {
+      const f = chunk.split(",");
+      if (f.length < 3) continue;
+      this.bullets.push(new Bullet(parseFloat(f[0]), parseFloat(f[1]), parseInt(f[2]), 83, 68, "aqua"));
+    }
+    this.ebullets = [];
+    for (const chunk of parts[8].split(";").filter(x => x.length)) {
+      const f = chunk.split(",");
+      if (f.length < 2) continue;
+      const [w, h] = proyectilTamano(f[3] || "basura_toxica", 0.55);
+      this.ebullets.push(new EBullet(parseFloat(f[0]), parseFloat(f[1]), 1, w, h, 0, 0, f[2] || "nivel", f[3] || "basura_toxica"));
+    }
+    const sp = parts[9];
+    for (let i = 0; i < sp.length && i < this.spikes.length; i++) this.spikes[i].entero = sp[i] === "1";
+    const bo = parts[10];
+    for (let i = 0; i < bo.length && i < this.bombs.length; i++) {
+      const bomba = this.bombs[i];
+      if (bo[i] === "1") { bomba.entera = true; bomba.viva = true; bomba.fuego = 0; }
+      else if (bo[i] === "2") { bomba.entera = false; bomba.viva = true; }
+      else { bomba.viva = false; bomba.entera = false; }
+    }
+    const cvp = parts[11];
+    if (cvp !== "-") {
+      const f = cvp.split(",");
+      if (!this.corvo) this.corvo = new CorvoCompanion(0, 0);
+      this.corvo.x = parseFloat(f[0]); this.corvo.y = parseFloat(f[1]);
+      this.corvo.llevando = f[2] === "1";
+      this.corvo.rect.x = this.corvo.x - this.corvo.rect.w / 2;
+      this.corvo.rect.y = this.corvo.y - this.corvo.rect.h / 2;
+    }
+    const cam = parseFloat(parts[12]);
+    if (!isNaN(cam)) this.camaraX = cam;
+    const dg = parts[13];
+    if (dg !== "-") {
+      const f = dg.split(",");
+      const cual = f[0];
+      let lineas;
+      if (cual === "F") lineas = this.LD.dialogoFinal;
+      else if (f[1] === "E") lineas = this.LD.dialogoEncuentro;
+      else if (f[1] === "M") lineas = this.LD.dialogoMascara;
+      else lineas = this.LD.dialogoInicio;
+      const dlg = new Dialogo(lineas, this.p1Char);
+      const base = cual === "D" ? 2 : 1;
+      dlg.indice = parseInt(f[base]) || 0;
+      dlg.letras = parseInt(f[base + 1]) || 0;
+      dlg.activo = true;
+      if (cual === "F") this.dialogoFinal = dlg;
+      else { this.dialogo = dlg; this.dialogoKind = f[1] || "I"; }
+    } else {
+      this.dialogo = null; this.dialogoFinal = null;
+    }
+    this.aviso = parts[14] ? parts[14] : null;
+    this.resultado = parts[15] ? parts[15] : null;
+    this.temblor = parseInt(parts[16]) || 0;
+    this.cinematica = parts[17] ? parts[17] : null;
+    if (parts.length > 19) {
+      const c1 = parts[18], c2 = parts[19];
+      if (c1 === "aqua" || c1 === "yani") this.snapP1Char = c1;
+      if (c2 === "aqua" || c2 === "yani") this.snapP2Char = c2;
+    }
+    if (this.resultado === "ganado" || this.resultado === "perdido") this.terminado = true;
+  }
+}
+// ---------------------------------------------------------------------------
+// Vista: canvas, dibujo del mundo y de los menús (puerto de GameView.kt)
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let viewW = 0, viewH = 0, dpr = 1;
+let scale = 1, offX = 0, offY = 0;
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  viewW = window.innerWidth; viewH = window.innerHeight;
+  canvas.width = Math.round(viewW * dpr);
+  canvas.height = Math.round(viewH * dpr);
+  scale = Math.min(viewW / 1280, viewH / 720);
+  offX = (viewW - 1280 * scale) / 2;
+  offY = (viewH - 720 * scale) / 2;
+}
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", () => setTimeout(resize, 60));
+resize();
+
+const COL = {
+  panel: "rgba(18,26,48,0.92)", panelStroke: "rgb(90,150,210)",
+  blanco: "#ffffff", gris: "rgb(150,150,165)", verde: "rgb(120,220,60)",
+  azul: "rgb(90,190,255)", rojo: "rgb(226,48,62)", contorno: "rgb(8,6,12)"
+};
+let FIT_VIEW = false; // en menús, el texto centrado se ajusta al ancho de la vista
+function textOutlined(text, x, y, size, color, bold, centered) {
+  ctx.font = (bold ? "bold " : "") + size + "px ui-monospace, Menlo, Consolas, monospace";
+  if (FIT_VIEW && centered) {
+    const wText = ctx.measureText(text).width;
+    const maxW = viewW * 0.94;
+    if (wText > maxW) {
+      size = size * maxW / wText;
+      ctx.font = (bold ? "bold " : "") + size + "px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
+  ctx.textAlign = centered ? "center" : "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.lineWidth = Math.max(2, size / 7);
+  ctx.strokeStyle = COL.contorno;
+  ctx.lineJoin = "round";
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+function wrapText(text, maxWidth, size, bold) {
+  ctx.font = (bold ? "bold " : "") + size + "px ui-monospace, Menlo, Consolas, monospace";
+  const words = text.split(" ");
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur === "" ? w : cur + " " + w;
+    if (ctx.measureText(test).width <= maxWidth) cur = test;
+    else { if (cur) lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function roundRectPath(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+/** Sprite a tamaño natural, centrado en centerX con la base en bottomY. */
+function drawSprite(bmp, centerX, bottomY, facing, alpha, fallbackColor) {
+  ctx.save();
+  ctx.globalAlpha = (alpha === undefined ? 255 : alpha) / 255;
+  if (!bmp) {
+    ctx.fillStyle = fallbackColor || "#3a96d2";
+    ctx.fillRect(centerX - 23, bottomY - 112, 46, 112);
+    ctx.restore();
+    return;
+  }
+  if (facing >= 0) {
+    ctx.drawImage(bmp, centerX - bmp.naturalWidth / 2, bottomY - bmp.naturalHeight);
+  } else {
+    ctx.translate(centerX + bmp.naturalWidth / 2, bottomY - bmp.naturalHeight);
+    ctx.scale(-1, 1);
+    ctx.drawImage(bmp, 0, 0);
+  }
+  ctx.restore();
+}
+function drawSpriteScaled(bmp, left, top, w, h, facing, alpha) {
+  ctx.save();
+  ctx.globalAlpha = (alpha === undefined ? 255 : alpha) / 255;
+  if (!bmp) { ctx.fillStyle = "#7a4a21"; ctx.fillRect(left, top, w, h); ctx.restore(); return; }
+  if (facing >= 0) ctx.drawImage(bmp, left, top, w, h);
+  else {
+    ctx.translate(left + w, top);
+    ctx.scale(-1, 1);
+    ctx.drawImage(bmp, 0, 0, w, h);
+  }
+  ctx.restore();
+}
+function drawImg(bmp, x, y) { if (bmp) ctx.drawImage(bmp, x, y); }
+function tileX(bmp, offset, y) {
+  if (!bmp) return;
+  const w = bmp.naturalWidth;
+  let x = offset % w;
+  if (x > 0) x -= w;
+  while (x < 1280) { ctx.drawImage(bmp, x, y); x += w; }
+}
+
+function drawFondoToxico(eng, cx, cy) {
+  const L = eng.LD;
+  const rioY = L.rioTop - 20;
+  if (!SPR.fondoPaisaje) { ctx.fillStyle = "rgb(42,24,38)"; ctx.fillRect(0, 0, 1280, 720); }
+  if (SPR.fondoPaisaje) ctx.drawImage(SPR.fondoPaisaje, -cx * 0.03, -60 - cy * 0.2);
+  tileX(SPR.fondoToxico, -cx * 0.22, rioY - (SPR.fondoToxico ? SPR.fondoToxico.naturalHeight : 0) + 10 - cy);
+  tileX(SPR.fondoFabrica, -cx * 0.45, rioY - (SPR.fondoFabrica ? SPR.fondoFabrica.naturalHeight : 0) + 30 - cy);
+  ctx.fillStyle = "rgba(60,140,50,0.15)";
+  ctx.fillRect(0, 0, 1280, 720);
+  const onda = Math.trunc(5 * Math.sin(eng.tick * 0.15));
+  tileX(SPR.rioToxico, -cx, rioY + onda - cy);
+  ctx.fillStyle = "rgb(46,96,30)";
+  ctx.fillRect(0, rioY + 46 - cy, 1280, 720 - cy);
+  if (SPR.burbujas) {
+    for (const [x, altura] of eng.ambiente) {
+      const px = x - cx;
+      if (px < -400 || px > 1680) continue;
+      ctx.save();
+      ctx.globalAlpha = clamp(1 - altura / 230, 0, 1);
+      ctx.drawImage(SPR.burbujas, px, rioY - altura - cy);
+      ctx.restore();
+    }
+  }
+  if (SPR.banderaMeta) {
+    ctx.drawImage(SPR.banderaMeta, L.arenaDer - 150 - cx, 560 - SPR.banderaMeta.naturalHeight + 6 - cy);
+  }
+}
+function drawFondoPlanta(eng, cx, cy) {
+  const L = eng.LD;
+  const lodoY = L.rioTop - 30;
+  if (!SPR.panorama) { ctx.fillStyle = "rgb(118,96,86)"; ctx.fillRect(0, 0, 1280, 720); }
+  if (SPR.panorama) ctx.drawImage(SPR.panorama, -cx * 0.30, -48 - cy * 0.2);
+  for (const [x, altura] of eng.ambiente) {
+    const px = ((x - cx * 0.3) % 1880) - 300;
+    if (px < -100 || px > 1380) continue;
+    const alfa = Math.trunc(90 * (1 - altura / 260));
+    const radio = 40 + altura * 0.35;
+    ctx.fillStyle = `rgba(70,62,70,${clamp(alfa, 0, 90) / 255})`;
+    ctx.beginPath(); ctx.arc(px, 420 - altura - cy, radio, 0, 6.3); ctx.fill();
+  }
+  ctx.fillStyle = "rgb(62,58,34)";
+  ctx.fillRect(0, lodoY - cy, 1280, 720 - cy);
+  tileX(SPR.charcoLodo, -cx * 0.9, lodoY - 20 - cy);
+  ctx.strokeStyle = "rgb(150,170,80)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let x0 = 0; x0 < 1280; x0 += 20) {
+    const y0 = lodoY + Math.sin((x0 + cx * 0.9) * 0.05) * 4 - cy;
+    const y1 = lodoY + Math.sin((x0 + 20 + cx * 0.9) * 0.05) * 4 - cy;
+    ctx.moveTo(x0, y0); ctx.lineTo(x0 + 20, y1);
+  }
+  ctx.stroke();
+}
+
+function drawGame() {
+  const eng = engine;
+  if (!eng) return;
+  ctx.save();
+  ctx.translate(offX, offY);
+  ctx.scale(scale, scale);
+  const isClient = eng.mode === "ONLINE_CLIENT";
+  const [temblorX, temblorY] = eng.shakeOffset();
+  const cx = (isClient && interpInit ? Math.trunc(interpCamX) : Math.trunc(eng.camaraX)) + temblorX;
+  const cy = Math.trunc(eng.camaraY + eng.alzar) + temblorY;
+  const L = eng.LD;
+  if (L.fondo === "TOXICO") drawFondoToxico(eng, cx, cy);
+  else if (L.fondo === "PLANTA") drawFondoPlanta(eng, cx, cy);
+  else {
+    if (!SPR.fondo) { ctx.fillStyle = "rgb(214,176,112)"; ctx.fillRect(0, 0, 1280, 720); }
+    if (SPR.fondo) ctx.drawImage(SPR.fondo, -cx * 0.10, -150 - cy * 0.2);
+    ctx.fillStyle = "rgb(58,92,52)";
+    ctx.fillRect(0, 600 - cy, 1280, 720 - cy);
+  }
+  // plataformas sólidas
+  for (const p of L.plataformas) {
+    if (p.x - cx < -700 || p.x - cx > 1980) continue;
+    const im = worldImg(eng.level, p.imagen);
+    if (L.fondo === "TOXICO" && im) {
+      const rioY = L.rioTop - 20;
+      const base = p.y + im.naturalHeight - 10;
+      if (base < rioY + 40) {
+        const px = p.x + im.naturalWidth / 2 - 36 - cx;
+        ctx.fillStyle = "rgb(44,52,46)";
+        ctx.fillRect(px, base - cy, 72, rioY + 40 - cy - (base - cy));
+        ctx.fillStyle = "rgb(74,86,72)";
+        ctx.fillRect(px, base - cy, 8, rioY + 40 - (base));
+        ctx.fillStyle = "rgb(28,34,30)";
+        ctx.fillRect(px + 64, base - cy, 8, rioY + 40 - (base));
+      }
+    }
+    if (im) ctx.drawImage(im, p.x - cx, p.y - cy);
+    else { ctx.fillStyle = "#8a6a42"; ctx.fillRect(p.solido[0] - cx, p.solido[1] - cy, p.solido[2], 40); }
+  }
+  for (const p of L.unaVia) {
+    if (p.x - cx < -700 || p.x - cx > 1980) continue;
+    drawImg(worldImg(eng.level, p.imagen), p.x - cx, p.y - cy);
+  }
+  for (const o of L.obstaculos) {
+    if (o.x - cx < -700 || o.x - cx > 1980) continue;
+    drawImg(worldImg(eng.level, o.imagen), o.x - cx, o.y - cy);
+  }
+  for (const a of L.adornos) {
+    if (a.delante) continue;
+    const im = worldImg(eng.level, a.imagen);
+    if (!im) continue;
+    if (a.x - cx < -400 || a.x - cx > 1680) continue;
+    ctx.drawImage(im, a.x - cx, a.y - im.naturalHeight + 8 - cy);
+  }
+  for (const f of L.flotantes) {
+    const im = worldImg(eng.level, f.imagen);
+    if (im) ctx.drawImage(im, f.x - cx, f.y - cy);
+  }
+  if (L.pozoX > 0 && SPR.pozo) {
+    ctx.drawImage(SPR.pozo, L.pozoX - SPR.pozo.naturalWidth / 2 - cx, L.sueloY - SPR.pozo.naturalHeight + 10 - cy);
+  }
+  for (const g of eng.drops) {
+    if (!g.viva) continue;
+    if (g.rect.x - cx < -60 || g.rect.x - cx > 1340) continue;
+    if (SPR.gota) ctx.drawImage(SPR.gota, g.rect.x - cx, g.rect.y - cy);
+    else { ctx.fillStyle = "#3ec6ff"; ctx.fillRect(g.rect.x - cx, g.rect.y - cy, 29, 38); }
+  }
+  for (const en of eng.enemies) {
+    if (!en.vivo) continue;
+    if (en.rect.x - cx < -250 || en.rect.x - cx > 1530) continue;
+    const set = SETS[en.data.paquete];
+    const frames = set && set[en.anim.state];
+    if (!frames || !frames.length) continue;
+    const bmp = frames[en.anim.frameIndex() % frames.length];
+    const alpha = (en.parpadeo > 0 && en.parpadeo % 4 < 2) ? 120 : 255;
+    drawSprite(bmp, en.rect.centerX - cx, en.rect.bottom - cy, en.facing, alpha, "#5a7a3a");
+  }
+  for (const bo of eng.bombs) {
+    if (!bo.viva) continue;
+    if (bo.rect.x - cx < -200 || bo.rect.x - cx > 1480) continue;
+    if (bo.entera) {
+      if (SPR.bomba) {
+        const pulso = Math.trunc(2 * Math.sin(bo.onda));
+        ctx.drawImage(SPR.bomba, bo.rect.x - cx, bo.rect.y + pulso - cy);
+      }
+    } else {
+      const ccx = bo.rect.centerX - cx, ccy = bo.rect.centerY - cy;
+      const alfa = clamp(Math.trunc(255 * bo.fuego / bo.duracion), 0, 255) / 255;
+      ctx.save(); ctx.globalAlpha = alfa;
+      ctx.fillStyle = "rgb(255,240,160)";
+      ctx.beginPath(); ctx.arc(ccx, ccy, bo.radio, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "rgb(255,170,60)";
+      ctx.beginPath(); ctx.arc(ccx, ccy, bo.radio * 0.7, 0, 6.3); ctx.fill();
+      ctx.fillStyle = "rgb(200,70,30)";
+      ctx.beginPath(); ctx.arc(ccx, ccy, bo.radio * 0.4, 0, 6.3); ctx.fill();
+      ctx.restore();
+    }
+  }
+  const b = eng.boss;
+  if (b && b.vivo) {
+    if (b instanceof BossCorvo) {
+      if (b.fase === 1 && Math.floor(b.reloj / 4) % 2 === 0) {
+        ctx.fillStyle = "rgba(255,90,90,0.35)";
+        ctx.beginPath(); ctx.ellipse(b.rect.centerX - cx, b.rect.centerY - cy, 90, 70, 0, 0, 6.3); ctx.fill();
+      } else if (b.fase === 3) {
+        ctx.fillStyle = "rgba(255,225,110,0.33)";
+        ctx.beginPath(); ctx.ellipse(b.rect.centerX - cx, b.rect.centerY - cy, 100, 75, 0, 0, 6.3); ctx.fill();
+      }
+      const frames = SETS.corvo && SETS.corvo[b.anim.state];
+      if (frames && frames.length) {
+        const bmp = frames[b.anim.frameIndex() % frames.length];
+        const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
+        const facing = eng.players.length ? (eng.p1.rect.centerX > b.fx ? 1 : -1) : 1;
+        ctx.save();
+        ctx.globalAlpha = alpha / 255;
+        if (facing >= 0) ctx.drawImage(bmp, b.rect.centerX - cx - bmp.naturalWidth / 2, b.rect.centerY - cy - bmp.naturalHeight / 2);
+        else {
+          ctx.translate(b.rect.centerX - cx + bmp.naturalWidth / 2, b.rect.centerY - cy - bmp.naturalHeight / 2);
+          ctx.scale(-1, 1);
+          ctx.drawImage(bmp, 0, 0);
+        }
+        ctx.restore();
+      }
+    } else if (b instanceof BossBasura) {
+      const frames = SETS.monstruo && SETS.monstruo[b.anim.state];
+      if (frames && frames.length) {
+        const bmp = frames[b.anim.frameIndex() % frames.length];
+        const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
+        drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.enemy.facing, alpha);
+      }
+    } else if (b instanceof BossEmpresario) {
+      if (b.rompiendo > 0) {
+        ctx.fillStyle = "rgba(255,240,180,0.27)";
+        ctx.beginPath(); ctx.ellipse(b.rect.centerX - cx, b.rect.centerY - cy, 60, 60, 0, 0, 6.3); ctx.fill();
+      }
+      const conjunto = b.conMascara ? "jefe_mascara" : "jefe_sin_mascara";
+      const frames = SETS[conjunto] && SETS[conjunto][b.anim.state];
+      if (frames && frames.length) {
+        const bmp = frames[b.anim.frameIndex() % frames.length];
+        const alpha = (b.parpadeo > 0 && b.parpadeo % 4 < 2) ? 120 : 255;
+        drawSpriteScaled(bmp, b.rect.x - cx, b.rect.y - cy, b.rect.w, b.rect.h, b.facing, alpha);
+      }
+    }
+  }
+  if (eng.corvo) {
+    const cv = eng.corvo;
+    const frames = SETS.corvo && SETS.corvo[cv.anim.state];
+    if (frames && frames.length) {
+      const bmp = frames[cv.anim.frameIndex() % frames.length];
+      drawSprite(bmp, cv.rect.centerX - cx, cv.rect.bottom - cy, cv.mirando, 255);
+    }
+  }
+  for (const bl of eng.bullets) {
+    const set = SETS[bl.owner];
+    const frames = set && set.bola;
+    if (!frames || !frames.length) continue;
+    const bmp = frames[Math.floor(bl.animTime / 4) % frames.length];
+    const bcx = bl.rect.centerX - cx, bcy = bl.rect.centerY - cy;
+    ctx.save();
+    if (bl.dir >= 0) ctx.drawImage(bmp, bcx - bmp.naturalWidth / 2, bcy - bmp.naturalHeight / 2);
+    else {
+      ctx.translate(bcx + bmp.naturalWidth / 2, bcy - bmp.naturalHeight / 2);
+      ctx.scale(-1, 1);
+      ctx.drawImage(bmp, 0, 0);
+    }
+    ctx.restore();
+  }
+  for (const eb of eng.ebullets) {
+    const bmp = SPR.proyectiles[eb.imgFolder + "/" + eb.imgName] || SPR.basura;
+    if (!bmp) continue;
+    ctx.save();
+    ctx.translate(eb.rect.centerX - cx, eb.rect.centerY - cy);
+    ctx.rotate(eb.giro * Math.PI / 180);
+    ctx.drawImage(bmp, -bmp.naturalWidth / 2, -bmp.naturalHeight / 2);
+    ctx.restore();
+  }
+  for (const sp of eng.spikes) {
+    if (!sp.entero && sp.rompiendo <= 0) continue;
+    if (sp.data.x - cx < -400 || sp.data.x - cx > 1680) continue;
+    if (sp.entero) {
+      const im = worldImg(eng.level, sp.data.imagen);
+      if (im) {
+        ctx.save();
+        if (sp.parpadeo > 0 && sp.parpadeo % 4 < 2) {
+          // destello de impacto: se aclara hacia el blanco en cuadros alternos
+          ctx.globalAlpha = 0.55;
+          ctx.drawImage(im, sp.data.x - cx, sp.data.imgY - cy);
+          ctx.globalCompositeOperation = "lighter";
+          ctx.globalAlpha = 0.45;
+          ctx.drawImage(im, sp.data.x - cx, sp.data.imgY - cy);
+        } else ctx.drawImage(im, sp.data.x - cx, sp.data.imgY - cy);
+        ctx.restore();
+      }
+    } else {
+      const fuerza = sp.rompiendo / 26;
+      const radio = sp.caja.w * 0.5 * (1.6 - fuerza);
+      if (radio >= 2) {
+        const s = 0.09 * fuerza;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = `rgb(${Math.trunc(220 * s * 11)},${Math.trunc(230 * s * 11)},${Math.trunc(255 * s * 11)})`;
+        const ccx = sp.caja.centerX - cx, ccy = sp.caja.centerY - cy;
+        for (let i = 0; i <= 3; i++) {
+          ctx.beginPath(); ctx.arc(ccx, ccy, Math.max(1, radio * (1 - i * 0.22)), 0, 6.3); ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+  }
+  eng.players.forEach((pl, idx) => {
+    const set = SETS[pl.character];
+    const frames = set && set[pl.anim.state];
+    if (!frames || !frames.length) return;
+    const bmp = frames[pl.anim.frameIndex() % frames.length];
+    const alpha = (pl.invulnerable > 0 && Math.floor(pl.invulnerable / 4) % 2 === 0) ? 90 : 255;
+    let pcx, pbottom;
+    if (isClient && interpInit) {
+      if (idx === 0) { pcx = interpP1X - cx; pbottom = interpP1Y - cy + pl.rect.h / 2; }
+      else { pcx = interpP2X - cx; pbottom = interpP2Y - cy + pl.rect.h / 2; }
+    } else {
+      pcx = pl.rect.centerX - cx; pbottom = pl.rect.bottom - cy;
+    }
+    drawSprite(bmp, pcx, pbottom, pl.facing, alpha, pl.character === "yani" ? "#d76bb0" : "#3a96d2");
+  });
+  for (const a of L.adornos) {
+    if (!a.delante) continue;
+    const im = worldImg(eng.level, a.imagen);
+    if (!im) continue;
+    if (a.x - cx < -400 || a.x - cx > 1680) continue;
+    ctx.drawImage(im, a.x - cx, a.y - im.naturalHeight + 8 - cy);
+  }
+  drawHud(eng);
+  const dlg = eng.dialogoFinal || eng.dialogo;
+  if (dlg && dlg.activo) drawDialog(dlg);
+  if (eng.fundido > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(255, eng.fundido) / 255})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+  ctx.restore();
+  if (screen === "PLAYING") drawControls();
+}
+
+function drawHud(eng) {
+  const lleno = SPR.corazonLleno, vacio = SPR.corazonVacio;
+  if (lleno && vacio) {
+    for (let i = 0; i < C.VIDAS; i++) {
+      const im = i < eng.p1.vidas ? lleno : vacio;
+      ctx.drawImage(im, 24 + i * (im.naturalWidth + 6), 22);
+    }
+    const p2 = eng.p2;
+    if (p2) {
+      for (let i = 0; i < C.VIDAS; i++) {
+        const im = i < p2.vidas ? lleno : vacio;
+        ctx.drawImage(im, 1280 - 24 - (i + 1) * (im.naturalWidth + 6), 22);
+      }
+    }
+  }
+  if (SPR.gotaHud) {
+    ctx.drawImage(SPR.gotaHud, 26, 86);
+    textOutlined(`${eng.p1.gotas} / ${eng.totalGotas}`, 26 + SPR.gotaHud.naturalWidth + 10, 108, 24, COL.azul, true, false);
+  }
+  textOutlined(eng.LD.rotulo, 640, 44, 20, COL.verde, true, true);
+  if (eng.aviso) textOutlined(eng.aviso, 640, 184, 34, COL.rojo, true, true);
+  const b = eng.boss;
+  if (b && b.vivo && b.despierto) {
+    const ancho = 520, x = (1280 - ancho) / 2, y = 720 - 60;
+    ctx.fillStyle = "rgb(20,16,22)";
+    ctx.fillRect(x - 4, y - 4, ancho + 8, 32);
+    ctx.fillStyle = "rgb(70,20,20)";
+    ctx.fillRect(x, y, ancho, 24);
+    ctx.fillStyle = "rgb(226,48,62)";
+    ctx.fillRect(x, y, ancho * b.vida / b.vidaMax, 24);
+    ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 2;
+    ctx.strokeRect(x - 4, y - 4, ancho + 8, 32);
+    textOutlined(b.titulo, 640, y - 14, 18, COL.blanco, true, true);
+  }
+  if (eng.mode === "ONLINE_CLIENT" || eng.mode === "ONLINE_HOST") {
+    const ahora = Date.now();
+    const ultimo = eng.mode === "ONLINE_CLIENT" ? lastSnapshotAt : lastRemoteInputAt;
+    const ok = ahora - ultimo < 2000;
+    ctx.fillStyle = ok ? COL.verde : COL.rojo;
+    ctx.beginPath(); ctx.arc(1252, 58, 10, 0, 6.3); ctx.fill();
+    textOutlined(eng.mode === "ONLINE_CLIENT" ? "ANFITRION" : "INVITADO", 1170, 64, 16, COL.gris, true, true);
+  }
+}
+
+function drawDialog(dlg) {
+  const linea = dlg.lineaActual();
+  if (!linea) return;
+  roundRectPath(90, 530, 1100, 150, 12);
+  ctx.fillStyle = COL.panel; ctx.fill();
+  ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 3; ctx.stroke();
+  const quien = linea.quien === "heroe"
+    ? (dlg.personaje === "yani" ? "yani" : "aqua")
+    : (linea.quien === "jefe" ? "jefe" : linea.quien === "padre" ? "padre" : "corvo");
+  const retrato = SPR.retratos[quien];
+  if (retrato) {
+    const s = 0.52;
+    const dw = retrato.naturalWidth * s, dh = retrato.naturalHeight * s;
+    ctx.drawImage(retrato, 104, 680 - dh - 8, dw, dh);
+  }
+  textOutlined(dlg.nombreActual(), 255, 570, 22, COL.azul, true, false);
+  const lines = wrapText(dlg.textoVisible(), 905, 24, false);
+  let y = 612;
+  for (const line of lines) { textOutlined(line, 255, y, 24, COL.blanco, false, false); y += 30; }
+  textOutlined("[TOCAR] continuar", 950, 664, 16, COL.gris, false, false);
+}
+
+// ---------------------------------------------------------------------------
+// Menús (geometría de MenuLayout.kt: fracciones de la vista)
+// ---------------------------------------------------------------------------
+function mbtn(id, label, cxF, cyF, wF, hF) {
+  const bw = viewW * wF, bh = viewH * hF, cx = viewW * cxF, cy = viewH * cyF;
+  return { id, label, left: cx - bw / 2, top: cy - bh / 2, right: cx + bw / 2, bottom: cy + bh / 2,
+           cx, cy, w: bw, h: bh };
+}
+function menuButtons() {
+  const back = () => mbtn("back", "VOLVER", 0.5, 0.92, 0.25, 0.09);
+  switch (screen) {
+    case "TITLE": return [
+      mbtn("single", "1 JUGADOR", 0.5, 0.56, 0.4, 0.11),
+      mbtn("coop", "2 JUGADORES (ESTE CEL)", 0.5, 0.68, 0.4, 0.11),
+      mbtn("multi", "MULTIJUGADOR ONLINE", 0.5, 0.80, 0.4, 0.11),
+      mbtn("howto", "CÓMO JUGAR", 0.5, 0.92, 0.4, 0.09)
+    ];
+    case "SELECT": return [
+      mbtn("aqua", "AQUA", 0.32, 0.55, 0.3, 0.5),
+      mbtn("yani", "YANI", 0.68, 0.55, 0.3, 0.5),
+      back()
+    ];
+    case "LEVEL": return [
+      mbtn("level:1", "NIVEL 1 · EN BUSCA DEL AGUA", 0.5, 0.38, 0.55, 0.11),
+      mbtn("level:2", "NIVEL 2 · EL FUTURO CONTAMINADO", 0.5, 0.52, 0.55, 0.11),
+      mbtn("level:3", "NIVEL 3 · LA PLANTA DE LA H2O COMPANY", 0.5, 0.66, 0.55, 0.11),
+      back()
+    ];
+    case "HOWTO": return [back()];
+    case "MULTI": return [
+      mbtn("online_host", "CREAR SALA ONLINE", 0.5, 0.55, 0.42, 0.11),
+      mbtn("online_join", "UNIRSE CON CÓDIGO", 0.5, 0.68, 0.42, 0.11),
+      back()
+    ];
+    case "ONLINE_WAIT": return [mbtn("cancel", "CANCELAR", 0.5, 0.85, 0.3, 0.1)];
+    case "ONLINE_JOIN": {
+      const list = [];
+      const rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
+      let cy = 0.40;
+      for (const row of rows) {
+        let cx = 0.32;
+        for (const d of row) { list.push(mbtn("digit:" + d, d, cx, cy, 0.14, 0.11)); cx += 0.18; }
+        cy += 0.14;
+      }
+      list.push(mbtn("digit:del", "BORRAR", 0.32, cy, 0.14, 0.11));
+      list.push(mbtn("digit:0", "0", 0.50, cy, 0.14, 0.11));
+      list.push(mbtn("online_join_go", "UNIRSE", 0.68, cy, 0.14, 0.11));
+      list.push(back());
+      return list;
+    }
+    case "CLIENT_WAIT": return [mbtn("cancel", "CANCELAR", 0.5, 0.85, 0.3, 0.1)];
+    case "PAUSED": return [
+      mbtn("resume", "SEGUIR JUGANDO", 0.5, 0.45, 0.35, 0.11),
+      mbtn("quit", "SALIR AL TÍTULO", 0.5, 0.60, 0.35, 0.11)
+    ];
+    case "GAMEOVER": {
+      const list = [];
+      if (engine && engine.mode !== "ONLINE_CLIENT") list.push(mbtn("retry", "REINTENTAR", 0.5, 0.60, 0.35, 0.11));
+      list.push(mbtn("quit", "SALIR AL TÍTULO", 0.5, 0.73, 0.35, 0.11));
+      return list;
+    }
+    case "VICTORY": {
+      const list = [];
+      const lvl = engine ? engine.level : 1;
+      if (lvl < 3 && engine && engine.mode !== "ONLINE_CLIENT") list.push(mbtn("next", "SIGUIENTE NIVEL", 0.5, 0.66, 0.35, 0.11));
+      list.push(mbtn("quit", "VOLVER AL TÍTULO", 0.5, 0.80, 0.35, 0.11));
+      return list;
+    }
+  }
+  return [];
+}
+function drawMenuBackground() {
+  const bg = SPR.titleBg || SPR.fondo;
+  ctx.fillStyle = "rgb(12,10,18)";
+  ctx.fillRect(0, 0, viewW, viewH);
+  if (!bg) return;
+  if (viewH > viewW) {
+    // Vertical: la portada entra COMPLETA a lo ancho, para que el nombre
+    // del juego se lea entero (con recorte a pantalla completa se cortaba
+    // por los lados). Empieza debajo del aviso de girar el teléfono, para
+    // no tapar el logotipo. Abajo queda el fondo oscuro de los botones.
+    const s = viewW / bg.naturalWidth;
+    const dh = bg.naturalHeight * s;
+    const y0 = 58;
+    ctx.drawImage(bg, 0, y0, viewW, dh);
+    ctx.fillStyle = "rgba(0,0,0,0.15)";
+    ctx.fillRect(0, y0, viewW, dh);
+    return;
+  }
+  const s = Math.max(viewW / bg.naturalWidth, viewH / bg.naturalHeight);
+  const dw = bg.naturalWidth * s, dh = bg.naturalHeight * s;
+  ctx.drawImage(bg, (viewW - dw) / 2, (viewH - dh) / 2, dw, dh);
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, 0, viewW, viewH);
+}
+function drawMenuButton(b) {
+  roundRectPath(b.left, b.top, b.w, b.h, 18);
+  ctx.fillStyle = COL.panel; ctx.fill();
+  ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 3; ctx.stroke();
+  const size = Math.min(viewH * 0.038, b.w / Math.max(8, b.label.length * 0.72));
+  textOutlined(b.label, b.cx, b.cy + size * 0.36, size, COL.blanco, true, true);
+}
+function drawTitle() {
+  drawMenuBackground();
+  textOutlined("Un juego sobre el cuidado del agua  ·  Reto JAPAMI", viewW / 2, viewH * 0.46, viewH * 0.032, COL.gris, false, true);
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawSelect() {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  const title = pendingMode === "COOP_LOCAL"
+    ? (choosingP2 ? "ELIGE TU PERSONAJE (JUGADOR 2)" : "ELIGE TU PERSONAJE (JUGADOR 1)")
+    : pendingMode === "ONLINE_HOST" ? "ELIGE TU PERSONAJE (ANFITRIÓN)"
+    : pendingMode === "ONLINE_CLIENT" ? "ELIGE TU PERSONAJE (INVITADO)"
+    : "ELIGE TU PERSONAJE";
+  textOutlined(title, w / 2, h * 0.12, h * 0.045, COL.blanco, true, true);
+  const subtitle = pendingMode === "ONLINE_CLIENT" ? "Puedes elegir el mismo que el anfitrión"
+    : (pendingMode === "COOP_LOCAL" && choosingP2) ? "Puede elegir el mismo que el jugador 1"
+    : pendingMode === "COOP_LOCAL" ? "Después elige el jugador 2"
+    : "Después elige el nivel";
+  textOutlined(subtitle, w / 2, h * 0.20, h * 0.035, COL.verde, true, true);
+  for (const b of menuButtons()) {
+    if (b.id === "aqua" || b.id === "yani") {
+      roundRectPath(b.left, b.top, b.w, b.h, 18);
+      ctx.fillStyle = COL.panel; ctx.fill();
+      ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 3; ctx.stroke();
+      const set = SETS[b.id];
+      const frame = set && set.quieto && set.quieto[0];
+      if (frame) {
+        const s = Math.min(b.w / frame.naturalWidth, (b.h * 0.62) / frame.naturalHeight);
+        const dw = frame.naturalWidth * s, dh = frame.naturalHeight * s;
+        ctx.drawImage(frame, b.cx - dw / 2, b.cy - dh / 2 - h * 0.03, dw, dh);
+      }
+      textOutlined(b.label, b.cx, b.bottom - h * 0.045, h * 0.05, COL.blanco, true, true);
+      textOutlined(b.id === "aqua" ? "Bolas moradas" : "Bolas rosas", b.cx, b.bottom - h * 0.015, h * 0.028, COL.gris, false, true);
+    } else drawMenuButton(b);
+  }
+  if (pendingMode === "COOP_LOCAL") {
+    const texto = choosingP2
+      ? `El jugador 1 eligió ${pendingChar === "aqua" ? "AQUA" : "YANI"}`
+      : "Cada uno elige el suyo (pueden ser el mismo)";
+    textOutlined(texto, w / 2, h * 0.84, h * 0.03, COL.gris, false, true);
+  }
+  if (pendingMode === "ONLINE_HOST") {
+    const elegido = onlineLink ? onlineLink.remoteChar : null;
+    const texto = elegido
+      ? `El invitado eligió ${elegido === "aqua" ? "AQUA" : "YANI"} (puede ser el mismo que tú)`
+      : "El invitado elige su personaje al unirse (puede ser el mismo que tú)";
+    textOutlined(texto, w / 2, h * 0.84, h * 0.03, COL.gris, false, true);
+  }
+}
+function drawLevel() {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  textOutlined("ELIGE EL NIVEL", w / 2, h * 0.12, h * 0.05, COL.blanco, true, true);
+  textOutlined(`Vas a jugar con ${pendingChar === "aqua" ? "AQUA" : "YANI"}`, w / 2, h * 0.22, h * 0.035, COL.verde, true, true);
+  textOutlined("Nivel 1: busca el agua con Corvo", w / 2, h * 0.30, h * 0.028, COL.gris, false, true);
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawTextScreen(title, lines) {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  textOutlined(title, w / 2, h * 0.12, h * 0.05, COL.blanco, true, true);
+  let y = h * 0.24;
+  for (const line of lines) {
+    textOutlined(line, w / 2, y, h * 0.033, COL.blanco, false, true);
+    y += h * 0.05;
+  }
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawHowTo() {
+  drawTextScreen("CÓMO JUGAR", [
+    "Mueve con las flechas ◀ ▼ ▶, salta con SALTO",
+    "(tócalo dos veces en el aire para el doble salto).",
+    "Dispara bolas de agua con DISPARO. Corre con CORRER.",
+    "Recoge gotas: cada 10 te devuelven un corazón.",
+    "Las púas y el río contaminado quitan vida.",
+    "Al final del nivel te espera Corvo, el guardián del pozo:",
+    "cuando se canse después de su picada, ¡ahí es cuando",
+    "se le puede pegar!",
+    "",
+    "COOPERATIVO: dos jugadores en el mismo teléfono,",
+    "cada uno con sus propios controles.",
+    "ONLINE: juega con un amigo en su Android o iPhone,",
+    "cada quien en su casa, con el código de sala BR-####."
+  ]);
+}
+function drawMulti() {
+  drawTextScreen("MULTIJUGADOR ONLINE", [
+    "Juega con alguien esté donde esté, sin compartir WiFi:",
+    "uno crea la sala y recibe un código BR-1234,",
+    "el otro entra con ese código. Las salas son las mismas",
+    "que las de la app de Android: un iPhone y un Android",
+    "pueden jugar juntos en la misma sala.",
+    "Cada uno elige su personaje (pueden ser el mismo)",
+    "y el anfitrión corre el juego; el invitado manda",
+    "sus teclas.",
+    "",
+    "Si es la primera partida en un rato, el servidor",
+    "puede tardar unos segundos en despertar."
+  ]);
+}
+function drawOnlineJoin() {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  textOutlined("UNIRSE CON CÓDIGO", w / 2, h * 0.12, h * 0.05, COL.blanco, true, true);
+  textOutlined("Escribe los 4 dígitos que te pasó el anfitrión:", w / 2, h * 0.22, h * 0.033, COL.blanco, false, true);
+  textOutlined("BR-" + onlineCodeInput.padEnd(4, "_"), w / 2, h * 0.31, h * 0.055, COL.azul, true, true);
+  if (statusText) textOutlined(statusText, w / 2, h * 0.37, h * 0.03, COL.rojo, false, true);
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawWait(title, status) {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  textOutlined(title, w / 2, h * 0.3, h * 0.05, COL.blanco, true, true);
+  // el estado puede ser largo: se parte en líneas que quepan
+  const lines = wrapText(status, w * 0.9, h * 0.035, false);
+  let y = h * 0.42;
+  for (const line of lines) { textOutlined(line, w / 2, y, h * 0.035, COL.azul, false, true); y += h * 0.05; }
+  if (screen === "ONLINE_WAIT" && onlineCode) {
+    textOutlined("Tu amigo lo escribe en UNIRSE CON CÓDIGO, desde cualquier red", w / 2, h * 0.56, h * 0.03, COL.gris, false, true);
+  }
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawPauseOverlay() {
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(0, 0, viewW, viewH);
+  textOutlined("PAUSA", viewW / 2, viewH * 0.3, viewH * 0.06, COL.blanco, true, true);
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawEnd(won) {
+  drawMenuBackground();
+  const w = viewW, h = viewH;
+  if (won) {
+    const lvl = engine ? engine.level : 1;
+    if (lvl === 1) {
+      textOutlined("¡NIVEL 1 COMPLETADO!", w / 2, h * 0.3, h * 0.06, COL.verde, true, true);
+      textOutlined("Corvo te dejó pasar. El pozo los lleva al 2030...", w / 2, h * 0.42, h * 0.035, COL.blanco, false, true);
+      textOutlined("El futuro está contaminado. Sigue al siguiente nivel.", w / 2, h * 0.50, h * 0.035, COL.blanco, false, true);
+    } else if (lvl === 2) {
+      textOutlined("¡NIVEL 2 COMPLETADO!", w / 2, h * 0.3, h * 0.06, COL.verde, true, true);
+      textOutlined("Corvo te sacó volando del 2030 contaminado.", w / 2, h * 0.42, h * 0.035, COL.blanco, false, true);
+      textOutlined("De vuelta al presente: la planta de la", w / 2, h * 0.50, h * 0.035, COL.blanco, false, true);
+      textOutlined("H2O Company te espera.", w / 2, h * 0.56, h * 0.035, COL.blanco, false, true);
+    } else {
+      textOutlined("¡BRIGADA 2030 COMPLETADO!", w / 2, h * 0.3, h * 0.055, COL.verde, true, true);
+      textOutlined("El agua está volviendo. Juntos vamos a", w / 2, h * 0.42, h * 0.035, COL.blanco, false, true);
+      textOutlined("lograr un futuro mejor.", w / 2, h * 0.48, h * 0.035, COL.blanco, false, true);
+      textOutlined("Gracias por jugar  ·  CECyTEG Tarandacuao  ·  Reto JAPAMI", w / 2, h * 0.56, h * 0.028, COL.gris, false, true);
+    }
+  } else {
+    textOutlined("TE QUEDASTE SIN AGUA", w / 2, h * 0.3, h * 0.06, COL.rojo, true, true);
+    textOutlined("El pueblo sigue esperando. ¡Inténtalo de nuevo!", w / 2, h * 0.42, h * 0.035, COL.blanco, false, true);
+  }
+  for (const b of menuButtons()) drawMenuButton(b);
+}
+function drawLoading() {
+  ctx.fillStyle = "rgb(12,10,18)";
+  ctx.fillRect(0, 0, viewW, viewH);
+  textOutlined("BRIGADA 2030", viewW / 2, viewH * 0.42, viewH * 0.06, COL.blanco, true, true);
+  textOutlined("EL POZO DEL TIEMPO", viewW / 2, viewH * 0.52, viewH * 0.035, COL.azul, true, true);
+  const pct = loadTotal ? Math.floor(loadDone / loadTotal * 100) : 0;
+  textOutlined(`Cargando el juego... ${pct}%`, viewW / 2, viewH * 0.64, viewH * 0.03, COL.gris, false, true);
+  const bw = viewW * 0.5, bx = viewW * 0.25, by = viewH * 0.68;
+  ctx.fillStyle = "rgb(70,20,20)";
+  ctx.fillRect(bx, by, bw, 14);
+  ctx.fillStyle = COL.azul;
+  ctx.fillRect(bx, by, bw * pct / 100, 14);
+}
+
+// ---------------------------------------------------------------------------
+// Controles táctiles (misma geometría que la APK)
+// ---------------------------------------------------------------------------
+function controlButtons() {
+  const w = viewW, h = viewH;
+  const r = h * 0.075;
+  const coop = engine && engine.mode === "COOP_LOCAL";
+  const mk = (id, cx, cy, rr, label) => ({ id, cx: w * cx, cy: h * cy, r: h * rr, label });
+  if (coop) {
+    return [
+      mk("LEFT", 0.055, 0.84, 0.075, "◀"), mk("DOWN", 0.125, 0.84, 0.075, "▼"), mk("RIGHT", 0.195, 0.84, 0.075, "▶"),
+      mk("JUMP", 0.30, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.385, 0.88, 0.067, "DISPARO"),
+      mk("LEFT", 0.805, 0.84, 0.075, "◀"), mk("DOWN", 0.875, 0.84, 0.075, "▼"), mk("RIGHT", 0.945, 0.84, 0.075, "▶"),
+      mk("JUMP", 0.70, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.615, 0.88, 0.067, "DISPARO")
+    ];
+  }
+  return [
+    mk("LEFT", 0.06, 0.84, 0.075, "◀"), mk("DOWN", 0.13, 0.84, 0.075, "▼"), mk("RIGHT", 0.20, 0.84, 0.075, "▶"),
+    mk("RUN", 0.90, 0.52, 0.052, "CORRER"), mk("JUMP", 0.885, 0.76, 0.09, "SALTO"), mk("SHOOT", 0.775, 0.88, 0.071, "DISPARO")
+  ];
+}
+function pauseButton() {
+  return { id: "PAUSE", cx: viewW * 0.965, cy: viewH * 0.07, r: viewH * 0.045, label: "II" };
+}
+function drawControls() {
+  for (const btn of controlButtons()) {
+    const cluster = btn.cx < viewW / 2 ? 0 : 1;
+    const isDown = (cluster === 0 ? pressedL : pressedR)[btn.id];
+    ctx.fillStyle = isDown ? "rgba(90,150,210,0.66)" : "rgba(18,26,48,0.43)";
+    ctx.beginPath(); ctx.arc(btn.cx, btn.cy, btn.r, 0, 6.3); ctx.fill();
+    ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(btn.cx, btn.cy, btn.r, 0, 6.3); ctx.stroke();
+    const size = btn.label.length > 2 ? viewH * 0.028 : viewH * 0.05;
+    textOutlined(btn.label, btn.cx, btn.cy + size * 0.35, size, COL.blanco, false, true);
+  }
+  const pb = pauseButton();
+  ctx.fillStyle = "rgba(18,26,48,0.43)";
+  ctx.beginPath(); ctx.arc(pb.cx, pb.cy, pb.r, 0, 6.3); ctx.fill();
+  ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(pb.cx, pb.cy, pb.r, 0, 6.3); ctx.stroke();
+  textOutlined(pb.label, pb.cx, pb.cy + viewH * 0.03 * 0.35, viewH * 0.03, COL.blanco, false, true);
+}
+// ---------------------------------------------------------------------------
+// Red online: el MISMO protocolo de texto de la APK contra el relay
+// (CREATE / JOIN BR-#### / IN / SN| / CH / DA). El anfitrión simula y
+// manda instantáneas 15 veces por segundo; el invitado manda sus teclas.
+// ---------------------------------------------------------------------------
+function encodeInput(seq, input) {
+  const b = v => v ? "1" : "0";
+  return `IN ${seq} ${b(input.left)} ${b(input.right)} ${b(input.down)} ${b(input.run)} ${b(input.jumpPressed)} ${b(input.shootPressed)}`;
+}
+function decodeInput(line) {
+  const p = line.trim().split(" ");
+  if (p.length !== 8 || p[0] !== "IN") return null;
+  return { left: p[2] === "1", right: p[3] === "1", down: p[4] === "1", run: p[5] === "1", jumpPressed: p[6] === "1", shootPressed: p[7] === "1" };
+}
+function decodeCharacter(line) {
+  const p = line.trim().split(" ");
+  if (p.length !== 2 || p[0] !== "CH") return null;
+  return (p[1] === "aqua" || p[1] === "yani") ? p[1] : null;
+}
+/** Personaje del jugador 2: el que eligió el invitado, o el otro si aún no eligió. */
+function resolveGuestCharacter(hostChar, guestChar) {
+  return guestChar || (hostChar === "aqua" ? "yani" : "aqua");
+}
+/** El invitado manda con su propio ritmo: al instante si algo cambió y,
+ *  si no, cada 3 cuadros (20 por segundo). Puerto de GuestSendGate. */
+class GuestSendGate {
+  constructor() { this.counter = 0; this.lastSent = newInput(); }
+  shouldSend(cur) {
+    this.counter++;
+    const changed = cur.left !== this.lastSent.left || cur.right !== this.lastSent.right ||
+      cur.down !== this.lastSent.down || cur.run !== this.lastSent.run ||
+      cur.jumpPressed || cur.shootPressed;
+    const due = changed || this.counter % 3 === 0;
+    if (due) this.lastSent = copyInput(cur);
+    return due;
+  }
+}
+/** El anfitrión aplica cada mensaje "IN" una sola vez (sin doble salto). */
+class RemoteInputGate {
+  constructor() { this.lastRef = null; }
+  gate(cur) {
+    if (cur === this.lastRef) { const c = copyInput(cur); clearEdges(c); return c; }
+    this.lastRef = cur;
+    return cur;
+  }
+}
+
+class RelayLink {
+  constructor(cb) {
+    this.cb = cb || {};
+    this.ws = null; this.running = false; this.connected = false;
+    this.remoteInput = newInput();
+    this.remoteChar = null;
+    this.lastSnapshot = null;
+    this.pending = [];
+  }
+  _connect() {
+    this.running = true;
+    let ws;
+    try { ws = new WebSocket(RELAY_URL); } catch (e) {
+      if (this.cb.onDisconnected) this.cb.onDisconnected();
+      return;
+    }
+    this.ws = ws;
+    ws.onopen = () => {
+      this.connected = true;
+      const q = this.pending; this.pending = [];
+      for (const m of q) this._raw(m);
+    };
+    ws.onmessage = ev => this._handle(String(ev.data).trim());
+    ws.onclose = () => {
+      if (this.running) { this.connected = false; if (this.cb.onDisconnected) this.cb.onDisconnected(); }
+    };
+    ws.onerror = () => { /* el cierre llega por onclose */ };
+  }
+  _raw(m) { try { this.ws.send(m); } catch (e) { /* se reintenta en el siguiente */ } }
+  _send(m) {
+    if (this.ws && this.ws.readyState === 1) this._raw(m);
+    else this.pending.push(m);
+  }
+  createRoom() { this._connect(); this._send("CREATE"); }
+  joinRoom(code) { this._connect(); this._send("JOIN " + code); }
+  _handle(line) {
+    if (line.startsWith("SN|")) { this.lastSnapshot = line; if (this.cb.onSnapshot) this.cb.onSnapshot(line); }
+    else if (line.startsWith("IN ")) { const i = decodeInput(line); if (i) this.remoteInput = i; }
+    else if (line.startsWith("CH ")) { const ch = decodeCharacter(line); if (ch) this.remoteChar = ch; }
+    else if (line === "DA") { if (this.cb.onDialogueAdvance) this.cb.onDialogueAdvance(); }
+    else if (line.startsWith("ROOM ")) { if (this.cb.onRoomCode) this.cb.onRoomCode(line.slice(5).trim()); }
+    else if (line === "JOINED") { if (this.cb.onJoined) this.cb.onJoined(); }
+    else if (line === "PEER") { if (this.cb.onPeerJoined) this.cb.onPeerJoined(); }
+    else if (line === "FULL" || line === "NO_ROOM") { if (this.cb.onJoinFailed) this.cb.onJoinFailed(line); }
+  }
+  sendInput(seq, input) { if (!this.connected) return; this._send(encodeInput(seq, input)); }
+  sendCharacter(ch) {
+    // Se encola aunque aún no conecte: el servidor puede tardar en
+    // despertar y la elección viaja en orden, después del JOIN.
+    if (ch !== "aqua" && ch !== "yani") return;
+    this._send("CH " + ch);
+  }
+  sendDialogueAdvance() { this._send("DA"); }
+  sendSnapshot(s) { if (!this.connected) return; this._send(s); }
+  stop() {
+    this.running = false; this.connected = false;
+    if (this.ws) { try { this.ws.close(); } catch (e) {} this.ws = null; }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Estado de la vista y flujo de pantallas (puerto de GameView)
+// ---------------------------------------------------------------------------
+let screen = "TITLE";           // TITLE SELECT LEVEL HOWTO MULTI ONLINE_WAIT ONLINE_JOIN CLIENT_WAIT PLAYING PAUSED GAMEOVER VICTORY
+let pendingMode = "SINGLE";     // SINGLE COOP_LOCAL ONLINE_HOST ONLINE_CLIENT
+let pendingChar = "aqua";
+let pendingChar2 = "yani";
+let choosingP2 = false;
+let currentLevel = 1;
+let engine = null;
+let onlineLink = null;
+let onlineCode = "";
+let onlineCodeInput = "";
+let statusText = "";
+let inputSeq = 0;
+const guestSendGate = new GuestSendGate();
+const remoteInputGate = new RemoteInputGate();
+let interpP1X = 0, interpP1Y = 0, interpP2X = 0, interpP2Y = 0, interpCamX = 0, interpInit = false;
+let lastSnapshotAt = 0, lastRemoteInputAt = 0, lastRemoteSeen = null;
+
+const pressedL = { LEFT: false, RIGHT: false, DOWN: false, RUN: false, JUMP: false, SHOOT: false, PAUSE: false };
+const pressedR = { LEFT: false, RIGHT: false, DOWN: false, RUN: false, JUMP: false, SHOOT: false, PAUSE: false };
+const pointerBtn = new Map();   // pointerId -> {cluster, id}
+let jumpQueued = false, shootQueued = false;
+const p1Input = newInput();
+const p2Input = newInput();
+
+// -- música original (assets/musica) --
+const MUSIC = {};
+let musicName = "1_inicio";
+function ensureMusic() {
+  if (MUSIC["1_inicio"]) return;
+  for (const n of ["1_inicio", "2_desarrollo", "3_final"]) {
+    const a = new Audio("assets/musica/" + n + ".mp3");
+    a.loop = true; a.preload = "auto";
+    MUSIC[n] = a;
+  }
+  const a = MUSIC[musicName];
+  if (a) a.play().catch(() => {});
+}
+function musicPlay(name) {
+  musicName = name;
+  for (const k in MUSIC) if (k !== name) MUSIC[k].pause();
+  const a = MUSIC[name];
+  if (a) { try { a.currentTime = 0; } catch (e) {} a.play().catch(() => {}); }
+}
+
+// -- arranque de partidas --
+function startSingle(p1Char, level) {
+  level = level || 1;
+  currentLevel = level;
+  engine = new Engine("SINGLE", p1Char, "yani", level);
+  musicPlay(engine.LD.musica);
+  screen = "PLAYING";
+}
+function startCoop(p1Char, p2Char, level) {
+  level = level || 1;
+  currentLevel = level;
+  engine = new Engine("COOP_LOCAL", p1Char, p2Char, level);
+  musicPlay(engine.LD.musica);
+  screen = "PLAYING";
+}
+function startOnlineHost(p1Char, level) {
+  level = level || 1;
+  const p2Char = resolveGuestCharacter(p1Char, onlineLink ? onlineLink.remoteChar : null);
+  currentLevel = level;
+  engine = new Engine("ONLINE_HOST", p1Char, p2Char, level);
+  musicPlay(engine.LD.musica);
+  screen = "PLAYING";
+}
+function stopNet() {
+  if (onlineLink) { try { onlineLink.stop(); } catch (e) {} }
+  onlineLink = null;
+  onlineCode = "";
+  onlineCodeInput = "";
+}
+function createOnlineRoom() {
+  onlineCode = "";
+  statusText = "Conectando al servidor... (si está dormido, tarda unos segundos)";
+  screen = "ONLINE_WAIT";
+  onlineLink = new RelayLink({
+    onSnapshot: () => {},
+    onDialogueAdvance: () => { if (engine) engine.avanzarDialogo(); },
+    onRoomCode: code => {
+      onlineCode = code;
+      statusText = `Sala ${code} — comparte el código con tu amigo`;
+    },
+    onPeerJoined: () => {
+      statusText = "¡Invitado conectado!";
+      screen = "SELECT";
+      pendingMode = "ONLINE_HOST";
+    },
+    onDisconnected: () => {
+      statusText = "Se perdió la conexión con el servidor.";
+      if (screen === "PLAYING") {
+        // el jugador 2 se queda quieto; el anfitrión sigue jugando
+      } else if (screen === "ONLINE_WAIT" || screen === "SELECT" || screen === "LEVEL") {
+        stopNet();
+        screen = "TITLE";
+      }
+    }
+  });
+  onlineLink.createRoom();
+}
+function joinOnline(code) {
+  statusText = `Conectando a la sala ${code}...`;
+  engine = new Engine("ONLINE_CLIENT", "aqua", "yani", 1);
+  pendingMode = "ONLINE_CLIENT";
+  onlineLink = new RelayLink({
+    onSnapshot: snap => {
+      if (screen === "CLIENT_WAIT") {
+        ensureClientEngine(snap);
+        if (engine) engine.applySnapshot(snap);
+        lastSnapshotAt = Date.now();
+        interpInit = false;
+        screen = "PLAYING";
+      }
+    },
+    onDialogueAdvance: () => {},
+    onJoined: () => {},
+    onJoinFailed: reason => {
+      statusText = reason === "NO_ROOM"
+        ? `No existe la sala ${code}, revisa el código`
+        : `La sala ${code} ya tiene 2 jugadores`;
+      stopNet();
+      screen = "ONLINE_JOIN";
+    },
+    onDisconnected: () => {
+      if (screen === "PLAYING" || screen === "CLIENT_WAIT" || screen === "SELECT" || screen === "ONLINE_JOIN") {
+        statusText = "Se perdió la conexión con el servidor.";
+        stopNet();
+        screen = "TITLE";
+      }
+    }
+  });
+  onlineLink.joinRoom(code);
+  screen = "SELECT";
+}
+
+/** El motor del invitado debe coincidir con el del anfitrión en nivel y
+ *  personajes: si la instantánea trae otros, se recrea el motor. */
+function ensureClientEngine(snap) {
+  const partes = snap.split("|");
+  const nivelSnap = parseInt(partes[1]);
+  if (isNaN(nivelSnap)) return;
+  const eng = engine;
+  const c1 = partes[18] || (eng ? eng.p1Char : "aqua");
+  const c2 = partes[19] || (eng ? eng.p2Char : "yani");
+  if (!eng || eng.level !== nivelSnap || eng.p1Char !== c1 || eng.p2Char !== c2) {
+    engine = new Engine("ONLINE_CLIENT", c1, c2, nivelSnap);
+    currentLevel = nivelSnap;
+    musicPlay(engine.LD.musica);
+    interpInit = false;
+  }
+}
+function updateInterp(eng) {
+  const p1 = eng.p1, p2 = eng.p2;
+  if (!interpInit) {
+    interpP1X = p1.rect.centerX; interpP1Y = p1.rect.centerY;
+    if (p2) { interpP2X = p2.rect.centerX; interpP2Y = p2.rect.centerY; }
+    interpCamX = eng.camaraX;
+    interpInit = true;
+    return;
+  }
+  const ease = (cur, target) => cur + (target - cur) * 0.45;
+  interpP1X = ease(interpP1X, p1.rect.centerX);
+  interpP1Y = ease(interpP1Y, p1.rect.centerY);
+  if (p2) {
+    interpP2X = ease(interpP2X, p2.rect.centerX);
+    interpP2Y = ease(interpP2Y, p2.rect.centerY);
+  }
+  interpCamX = ease(interpCamX, eng.camaraX);
+}
+function buildInputs() {
+  const eng = engine;
+  if (!eng) return;
+  if (eng.mode === "ONLINE_CLIENT") {
+    p2Input.left = pressedL.LEFT; p2Input.right = pressedL.RIGHT;
+    p2Input.down = pressedL.DOWN; p2Input.run = pressedR.RUN;
+  } else if (eng.mode === "COOP_LOCAL") {
+    p1Input.left = pressedL.LEFT; p1Input.right = pressedL.RIGHT;
+    p1Input.down = pressedL.DOWN; p1Input.run = false;
+    p2Input.left = pressedR.LEFT; p2Input.right = pressedR.RIGHT;
+    p2Input.down = pressedR.DOWN; p2Input.run = false;
+  } else {
+    p1Input.left = pressedL.LEFT; p1Input.right = pressedL.RIGHT;
+    p1Input.down = pressedL.DOWN; p1Input.run = pressedR.RUN;
+  }
+  if (jumpQueued) { p1Input.jumpPressed = true; jumpQueued = false; }
+  if (shootQueued) { p1Input.shootPressed = true; shootQueued = false; }
+}
+
+function tick() {
+  const eng = engine;
+  // Invitado en victoria/derrota: si el anfitrión reintenta o cambia de
+  // nivel, me uno a su partida nueva.
+  if (eng && eng.mode === "ONLINE_CLIENT" && (screen === "VICTORY" || screen === "GAMEOVER")) {
+    const snap = onlineLink ? onlineLink.lastSnapshot : null;
+    if (snap) {
+      const partes = snap.split("|");
+      const nivelSnap = parseInt(partes[1]);
+      const resultadoSnap = partes[15] || "";
+      if (!isNaN(nivelSnap) && (nivelSnap !== eng.level || (screen === "GAMEOVER" && resultadoSnap === ""))) {
+        engine = new Engine("ONLINE_CLIENT", eng.p1Char, eng.p2Char, nivelSnap);
+        currentLevel = nivelSnap;
+        musicPlay(engine.LD.musica);
+        screen = "PLAYING";
+      }
+    }
+    return;
+  }
+  if (screen !== "PLAYING" || !eng) return;
+  if (eng.mode === "ONLINE_CLIENT") {
+    if (onlineLink) {
+      const snap = onlineLink.lastSnapshot;
+      if (snap) {
+        lastSnapshotAt = Date.now();
+        ensureClientEngine(snap);
+        if (engine) engine.applySnapshot(snap);
+      }
+      const cur = engine;
+      if (!cur) return;
+      buildInputs();
+      if (guestSendGate.shouldSend(p2Input)) {
+        onlineLink.sendInput(inputSeq++, p2Input);
+        clearEdges(p2Input);
+      }
+      updateInterp(cur);
+      if (cur.resultado === "ganado") screen = "VICTORY";
+      if (cur.resultado === "perdido") screen = "GAMEOVER";
+    }
+  } else if (eng.mode === "ONLINE_HOST") {
+    const elegido = onlineLink ? onlineLink.remoteChar : null;
+    if (elegido && elegido !== eng.p2Char && eng.dialogo && eng.dialogo.activo && eng.tick < 600) {
+      engine = new Engine("ONLINE_HOST", eng.p1Char, elegido, eng.level);
+      musicPlay(engine.LD.musica);
+      return;
+    }
+    buildInputs();
+    const remoteRaw = onlineLink ? onlineLink.remoteInput : newInput();
+    if (remoteRaw !== lastRemoteSeen) {
+      lastRemoteSeen = remoteRaw;
+      lastRemoteInputAt = Date.now();
+    }
+    const remote = remoteInputGate.gate(remoteRaw);
+    eng.update(p1Input, remote);
+    clearEdges(p1Input);
+    if (eng.tick % 4 === 0 && onlineLink) onlineLink.sendSnapshot(eng.snapshot());
+    if (eng.resultado === "ganado") screen = "VICTORY";
+    if (eng.resultado === "perdido") screen = "GAMEOVER";
+  } else {
+    buildInputs();
+    eng.update(p1Input, p2Input);
+    clearEdges(p1Input);
+    clearEdges(p2Input);
+    if (eng.resultado === "ganado") screen = "VICTORY";
+    if (eng.resultado === "perdido") screen = "GAMEOVER";
+  }
+}
+
+// -- toques de menú --
+function onMenuTap(id) {
+  ensureMusic();
+  if (id === "single") { pendingMode = "SINGLE"; choosingP2 = false; screen = "SELECT"; }
+  else if (id === "coop") { pendingMode = "COOP_LOCAL"; choosingP2 = false; screen = "SELECT"; }
+  else if (id === "multi") { screen = "MULTI"; }
+  else if (id === "online_host") { createOnlineRoom(); }
+  else if (id === "online_join") { onlineCodeInput = ""; statusText = ""; screen = "ONLINE_JOIN"; }
+  else if (id === "online_join_go") {
+    if (onlineCodeInput.length === 4) joinOnline("BR-" + onlineCodeInput);
+    else statusText = "Escribe los 4 dígitos del código";
+  }
+  else if (id === "howto") { screen = "HOWTO"; }
+  else if (id === "aqua" || id === "yani") {
+    if (pendingMode === "ONLINE_CLIENT") {
+      if (onlineLink) onlineLink.sendCharacter(id);
+      statusText = `Elegiste ${id === "aqua" ? "AQUA" : "YANI"}. Esperando a que el anfitrión empiece...`;
+      screen = "CLIENT_WAIT";
+    } else if (pendingMode === "COOP_LOCAL" && !choosingP2) {
+      pendingChar = id;
+      choosingP2 = true;
+    } else if (pendingMode === "COOP_LOCAL" && choosingP2) {
+      pendingChar2 = id;
+      choosingP2 = false;
+      screen = "LEVEL";
+    } else {
+      pendingChar = id;
+      screen = "LEVEL";
+    }
+  }
+  else if (id.startsWith("level:")) {
+    const lvl = parseInt(id.slice(6)) || 1;
+    if (pendingMode === "SINGLE") startSingle(pendingChar, lvl);
+    else if (pendingMode === "COOP_LOCAL") startCoop(pendingChar, pendingChar2, lvl);
+    else if (pendingMode === "ONLINE_HOST") startOnlineHost(pendingChar, lvl);
+    else startSingle(pendingChar, lvl);
+  }
+  else if (id === "next") {
+    const mode = engine ? engine.mode : "SINGLE";
+    const c1 = engine ? engine.p1Char : "aqua";
+    const c2 = engine ? engine.p2Char : "yani";
+    const nextLevel = (engine ? engine.level : 1) + 1;
+    if (mode === "SINGLE") startSingle(c1, nextLevel);
+    else if (mode === "COOP_LOCAL") startCoop(c1, c2, nextLevel);
+    else if (mode === "ONLINE_HOST") startOnlineHost(c1, nextLevel);
+    else startSingle(c1, nextLevel);
+  }
+  else if (id === "cancel" || id === "back") {
+    stopNet();
+    choosingP2 = false;
+    screen = "TITLE";
+  }
+  else if (id === "resume") { screen = "PLAYING"; }
+  else if (id === "quit") {
+    stopNet();
+    choosingP2 = false;
+    engine = null;
+    screen = "TITLE";
+    musicPlay("1_inicio");
+  }
+  else if (id === "retry") {
+    const mode = engine ? engine.mode : "SINGLE";
+    const c1 = engine ? engine.p1Char : "aqua";
+    const c2 = engine ? engine.p2Char : "yani";
+    engine = new Engine(mode, c1, c2, currentLevel);
+    musicPlay(engine.LD.musica);
+    screen = "PLAYING";
+  }
+  else if (id.startsWith("digit:")) {
+    const d = id.slice(6);
+    if (d === "del") onlineCodeInput = onlineCodeInput.slice(0, -1);
+    else if (onlineCodeInput.length < 4) onlineCodeInput += d;
+  }
+}
+
+// -- entrada táctil / ratón (Pointer Events, multitáctil como la APK) --
+function dist2(x1, y1, x2, y2) { const dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy; }
+function handlePress(pid, x, y) {
+  ensureMusic();
+  if (screen === "PLAYING") {
+    const eng = engine;
+    const pb = pauseButton();
+    if (dist2(x, y, pb.cx, pb.cy) <= pb.r * pb.r) { screen = "PAUSED"; return; }
+    const btn = controlButtons().find(b => dist2(x, y, b.cx, b.cy) <= b.r * b.r);
+    if (btn) {
+      const cluster = btn.cx < viewW / 2 ? 0 : 1;
+      pointerBtn.set(pid, { cluster, id: btn.id });
+      (cluster === 0 ? pressedL : pressedR)[btn.id] = true;
+      const isP2Side = eng && eng.mode === "COOP_LOCAL" && cluster === 1;
+      const isClient = eng && eng.mode === "ONLINE_CLIENT";
+      if (btn.id === "JUMP") {
+        if (isP2Side || isClient) p2Input.jumpPressed = true;
+        else jumpQueued = true;
+      }
+      if (btn.id === "SHOOT") {
+        if (isP2Side || isClient) p2Input.shootPressed = true;
+        else shootQueued = true;
+      }
+      return;
+    }
+    const dlg = eng ? (eng.dialogoFinal || eng.dialogo) : null;
+    if (dlg && dlg.activo) {
+      if (eng.mode === "ONLINE_CLIENT") { if (onlineLink) onlineLink.sendDialogueAdvance(); }
+      else eng.avanzarDialogo();
+    }
+    return;
+  }
+  const btn = menuButtons().find(b => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom);
+  if (btn) onMenuTap(btn.id);
+}
+function releasePointer(pid) {
+  const held = pointerBtn.get(pid);
+  if (!held) return;
+  pointerBtn.delete(pid);
+  let stillHeld = false;
+  for (const v of pointerBtn.values()) if (v.cluster === held.cluster && v.id === held.id) stillHeld = true;
+  if (!stillHeld) (held.cluster === 0 ? pressedL : pressedR)[held.id] = false;
+}
+canvas.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  handlePress(e.pointerId, e.clientX, e.clientY);
+});
+window.addEventListener("pointermove", e => {
+  const held = pointerBtn.get(e.pointerId);
+  if (!held) return;
+  const btn = controlButtons().find(b => b.id === held.id &&
+    (b.cx < viewW / 2 ? 0 : 1) === held.cluster &&
+    dist2(e.clientX, e.clientY, b.cx, b.cy) <= b.r * b.r);
+  if (!btn) releasePointer(e.pointerId);
+});
+window.addEventListener("pointerup", e => releasePointer(e.pointerId));
+window.addEventListener("pointercancel", e => {
+  releasePointer(e.pointerId);
+});
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("gesturestart", e => e.preventDefault());
+
+// -- teclado (para jugar también en computadora) --
+const KEYMAP = {
+  ArrowLeft: ["L", "LEFT"], KeyA: ["R", "LEFT"],
+  ArrowRight: ["L", "RIGHT"], KeyD: ["R", "RIGHT"],
+  ArrowDown: ["L", "DOWN"], KeyS: ["R", "DOWN"],
+  ShiftLeft: ["R", "RUN"], ShiftRight: ["R", "RUN"]
+};
+window.addEventListener("keydown", e => {
+  ensureMusic();
+  if (screen === "PLAYING") {
+    if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+      e.preventDefault();
+      if (!e.repeat) {
+        const eng = engine;
+        if (eng && (eng.mode === "ONLINE_CLIENT" || e.code === "KeyW" && eng.mode === "COOP_LOCAL")) p2Input.jumpPressed = true;
+        else jumpQueued = true;
+      }
+      return;
+    }
+    if (e.code === "KeyX" || e.code === "KeyJ" || e.code === "KeyF") {
+      e.preventDefault();
+      if (!e.repeat) {
+        const eng = engine;
+        if (eng && (eng.mode === "ONLINE_CLIENT" || e.code === "KeyF" && eng.mode === "COOP_LOCAL")) p2Input.shootPressed = true;
+        else shootQueued = true;
+      }
+      return;
+    }
+    if (e.code === "KeyP" || e.code === "Escape") { screen = "PAUSED"; return; }
+    if (e.code === "Enter") {
+      const eng = engine;
+      const dlg = eng ? (eng.dialogoFinal || eng.dialogo) : null;
+      if (dlg && dlg.activo) {
+        if (eng.mode === "ONLINE_CLIENT") { if (onlineLink) onlineLink.sendDialogueAdvance(); }
+        else eng.avanzarDialogo();
+      }
+      return;
+    }
+  } else if (screen === "PAUSED" && (e.code === "KeyP" || e.code === "Escape")) {
+    screen = "PLAYING";
+    return;
+  }
+  const m = KEYMAP[e.code];
+  if (m) {
+    e.preventDefault();
+    (m[0] === "L" ? pressedL : pressedR)[m[1]] = true;
+  }
+});
+window.addEventListener("keyup", e => {
+  const m = KEYMAP[e.code];
+  if (m) (m[0] === "L" ? pressedL : pressedR)[m[1]] = false;
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && screen === "PLAYING") screen = "PAUSED";
+});
+
+// ---------------------------------------------------------------------------
+// Render y bucle principal: ritmo fijo de 60 cuadros por segundo
+// ---------------------------------------------------------------------------
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Limpiar TODA la pantalla en cada cuadro (lección de la v1.1.4 de la
+  // APK: sin esto, los sprites dejan fantasmas en las franjas del
+  // letterbox, como el "Corvo duplicado").
+  ctx.fillStyle = "rgb(12,10,18)";
+  ctx.fillRect(0, 0, viewW, viewH);
+  if (!assetsReady) { drawLoading(); return; }
+  FIT_VIEW = screen !== "PLAYING" && screen !== "PAUSED";
+  switch (screen) {
+    case "TITLE": drawTitle(); break;
+    case "SELECT": drawSelect(); break;
+    case "LEVEL": drawLevel(); break;
+    case "HOWTO": drawHowTo(); break;
+    case "MULTI": drawMulti(); break;
+    case "ONLINE_WAIT": drawWait(onlineCode ? `SALA ${onlineCode}` : "CREANDO SALA", statusText); break;
+    case "ONLINE_JOIN": drawOnlineJoin(); break;
+    case "CLIENT_WAIT": drawWait("BUSCANDO SALA", statusText); break;
+    case "PLAYING": drawGame(); break;
+    case "PAUSED": drawGame(); drawPauseOverlay(); break;
+    case "GAMEOVER": drawEnd(false); break;
+    case "VICTORY": drawEnd(true); break;
+  }
+}
+let lastTs = 0, accumulator = 0;
+function loop(ts) {
+  requestAnimationFrame(loop);
+  if (!lastTs) lastTs = ts;
+  let dt = (ts - lastTs) / 1000;
+  lastTs = ts;
+  if (dt > 0.25) dt = 0.25;
+  accumulator += dt;
+  const step = 1 / 60;
+  let steps = 0;
+  try {
+    while (accumulator >= step && steps < 3) {
+      if (assetsReady) tick();
+      accumulator -= step;
+      steps++;
+    }
+    if (steps === 3) accumulator = 0;
+    render();
+  } catch (err) {
+    // Un cuadro malo no debe matar el bucle (igual que en la APK).
+    if (window.console) console.error(err);
+  }
+}
+preloadAssets(() => {});
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
