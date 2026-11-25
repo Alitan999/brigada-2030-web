@@ -30,11 +30,19 @@
     position: absolute; width: 1px; height: 1px; overflow: hidden;
     clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
   }
+  #boot { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: #0c0a12; color: #fff; text-align: center; }
+  #boot .boot-title { font-size: 34px; font-weight: bold; letter-spacing: 2px; color: #7fd4ff; }
+  #boot .boot-sub { font-size: 15px; margin-top: 6px; color: #cfe8ff; }
+  #boot .boot-load { font-size: 15px; margin-top: 22px; }
+  #bootmsg { display: none; margin-top: 18px; font-size: 12px; color: #ffb3b3; max-width: 82vw; word-break: break-word; }
+  #save-status { display: none; position: fixed; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 40; background: rgba(18, 26, 48, .92); color: #fff; border: 2px solid rgb(90, 150, 210); border-radius: 10px; padding: 7px 12px; font-size: 12px; text-align: center; max-width: 94vw; pointer-events: none; }
 </style>
 </head>
 <body>
+<div id="boot"><div><div class="boot-title">BRIGADA 2030</div><div class="boot-sub">EL POZO DEL TIEMPO</div><div class="boot-load">Cargando el juego...</div><div id="bootmsg"></div></div></div>
 <canvas id="game"></canvas>
 <div id="giro">Gira tu teléfono a horizontal</div>
+<div id="save-status"></div>
 <section class="sr-only" aria-label="Descripción del juego">
   <h1>Brigada 2030: El Pozo del Tiempo</h1>
   <p>Juego de plataformas sobre el cuidado del agua, hecho por alumnos del CECyTEG Tarandacuao para el Reto JAPAMI. Todo el juego se dibuja en el lienzo de arriba: los menús y los controles son botones táctiles sobre la pantalla.</p>
@@ -43,6 +51,21 @@
   <h2>Multijugador online</h2>
   <p>En Multijugador Online, un jugador crea la sala y recibe un código BR-1234; el otro entra con ese código. Las salas son las mismas de la app de Android, así que un iPhone y un Android pueden jugar juntos en la misma partida. El anfitrión corre el juego y el invitado manda sus teclas.</p>
 </section>
+<script>
+(function () {
+  function show(msg) {
+    var el = document.getElementById('bootmsg');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  }
+  window.addEventListener('error', function (e) {
+    show('Error: ' + (e.message || 'desconocido') + (e.filename ? ' (' + e.filename + ':' + (e.lineno || '?') + ')' : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    show('Error: ' + (r && r.message ? r.message : r));
+  });
+})();
+</script>
 <script>
 "use strict";
 /* =========================================================================
@@ -301,21 +324,119 @@ function worldImg(nivel, nombre) {
   return img(carpeta + "/" + nombre);
 }
 
-function preloadAssets(done) {
-  const keys = Object.keys(MANIFEST);
-  loadTotal = keys.length; loadDone = 0;
-  if (loadTotal === 0) { assetsReady = true; done(); return; }
-  let finished = false;
-  const finish = () => { if (!finished) { finished = true; buildSpriteTables(); assetsReady = true; done(); } };
-  for (const key of keys) {
-    const im = new Image();
-    im.onload = () => { IMGS[key] = im; if (++loadDone >= loadTotal) finish(); };
-    im.onerror = () => { IMGS[key] = null; if (++loadDone >= loadTotal) finish(); };
-    im.src = "assets/" + MANIFEST[key];
+// ---------------------------------------------------------------------------
+// Carga perezosa por niveles.
+// Antes se cargaban las 514 imágenes del MANIFEST antes de entrar (hasta
+// 20 s de espera en red lenta). Ahora solo se espera lo del título +
+// nivel 1; los niveles 2 y 3 se descargan en segundo plano mientras se
+// juega. Si se entra a un nivel cuyo arte aún no llegó, se espera solo
+// a ese nivel, no a todo.
+//   Tier 0 (entrada): título, Aqua, Yani, Corvo, HUD, nivel 1 y los
+//     sprites compartidos que usa el nivel 1 (pozo, gotas, retratos).
+//   Tier 1 (nivel 2): monstruo, hazmat, policia, robot y el resto de
+//     "nivel/" (fondos tóxicos, plataformas, bombas...).
+//   Tier 2 (nivel 3): jefe_mascara, jefe_sin_mascara, nivel3 y los
+//     retratos del jefe y del padre.
+// Cualquier clave no clasificada cae en el tier 1 (red de seguridad).
+// ---------------------------------------------------------------------------
+const TIER0_NIVEL = new Set(["pozo", "pozo_agua", "pozo_seco", "gota", "gota_hud", "retrato_aqua", "retrato_yani", "retrato_corvo"]);
+const TIER2_NIVEL = new Set(["retrato_jefe", "retrato_padre"]);
+function tierOf(key) {
+  const folder = key.split("/")[0];
+  if (folder === "intro" || folder === "aqua" || folder === "yani" || folder === "corvo" || folder === "hud" || folder === "nivel1") return 0;
+  if (folder === "nivel") {
+    const name = key.slice(6);
+    if (TIER0_NIVEL.has(name)) return 0;
+    if (TIER2_NIVEL.has(name)) return 2;
+    return 1;
   }
+  if (folder === "monstruo" || folder === "hazmat" || folder === "policia" || folder === "robot") return 1;
+  if (folder === "jefe_mascara" || folder === "jefe_sin_mascara" || folder === "nivel3") return 2;
+  return 1;
+}
+const TIER_KEYS = [[], [], []];
+for (const key of Object.keys(MANIFEST)) TIER_KEYS[tierOf(key)].push(key);
+const tierPromises = [null, null, null];
+const tierDone = [false, false, false];
+let waitingLevel = null; // {mode, c1, c2, lvl, tier} mientras se espera el arte de un nivel
+
+/** Carga un tier (promesa cacheada; nunca rechaza: cada imagen que
+ *  falla cuenta como lista y su sprite queda en null). Al terminar
+ *  reconstruye las tablas de sprites con lo que haya llegado. */
+function loadTier(n, onProgress) {
+  if (tierPromises[n]) return tierPromises[n];
+  const keys = TIER_KEYS[n];
+  tierPromises[n] = new Promise((resolve) => {
+    if (keys.length === 0) { tierDone[n] = true; buildSpriteTables(); resolve(); return; }
+    let done = 0;
+    const oneMore = () => {
+      done++;
+      if (onProgress) onProgress(done, keys.length);
+      if (done >= keys.length) { tierDone[n] = true; buildSpriteTables(); resolve(); }
+    };
+    for (const key of keys) {
+      const im = new Image();
+      im.onload = () => { IMGS[key] = im; oneMore(); };
+      im.onerror = () => { IMGS[key] = null; oneMore(); };
+      im.src = "assets/" + MANIFEST[key];
+    }
+  });
+  return tierPromises[n];
+}
+let bgLoadStarted = false;
+function startBackgroundLoad() {
+  if (bgLoadStarted) return;
+  bgLoadStarted = true;
+  // Niveles 2 y 3, en orden, sin bloquear el juego.
+  loadTier(1).then(() => loadTier(2));
+}
+function preloadAssets(done) {
+  // Solo el tier 0 (título + nivel 1) bloquea la entrada.
+  const keys = TIER_KEYS[0];
+  loadTotal = keys.length; loadDone = 0;
+  if (keys.length === 0) { assetsReady = true; done(); startBackgroundLoad(); return; }
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; assetsReady = true; done(); startBackgroundLoad(); } };
+  loadTier(0, (d, t) => { loadDone = d; loadTotal = t; if (d >= t) finish(); });
   // Red de seguridad: si la red va muy lenta, se entra con lo que haya
   // cargado (los sprites que falten se dibujan como formas simples).
   setTimeout(finish, 20000);
+}
+/** ¿El arte del nivel ya está listo? El nivel 1 siempre (tier 0). */
+function tierReadyForLevel(level) {
+  if (level === 2) return tierDone[1];
+  if (level === 3) return tierDone[2];
+  return true;
+}
+/** Promesa del arte de un nivel (la misma que la carga de fondo). */
+function waitForLevel(level) {
+  if (level === 2) return loadTier(1);
+  if (level === 3) return loadTier(2);
+  return Promise.resolve();
+}
+/** ¿Cuántas imágenes de un tier ya llegaron (cargadas o con error)? */
+function tierSettled(n) {
+  let done = 0;
+  for (const k of TIER_KEYS[n]) if (k in IMGS) done++;
+  return done;
+}
+/** Arranca un nivel cuando su arte esté listo; si aún no llegó, muestra
+ *  la pantalla de carga y espera solo a ese nivel. */
+function beginLevel(mode, c1, c2, lvl) {
+  if (tierReadyForLevel(lvl)) { startLevelNow(mode, c1, c2, lvl); return; }
+  waitingLevel = { mode, c1, c2, lvl, tier: lvl === 2 ? 1 : 2 };
+  screen = "LOADING";
+  waitForLevel(lvl).then(() => {
+    if (!waitingLevel || waitingLevel.lvl !== lvl) return;
+    startLevelNow(waitingLevel.mode, waitingLevel.c1, waitingLevel.c2, waitingLevel.lvl);
+  });
+}
+function startLevelNow(mode, c1, c2, lvl) {
+  waitingLevel = null;
+  if (mode === "SINGLE") startSingle(c1, lvl);
+  else if (mode === "COOP_LOCAL") startCoop(c1, c2, lvl);
+  else if (mode === "ONLINE_HOST") startOnlineHost(c1, lvl);
+  else startSingle(c1, lvl);
 }
 
 // ---------------------------------------------------------------------------
@@ -2337,6 +2458,10 @@ function drawTitle() {
   // en silencio al volver al menú.
   if (statusText) textOutlined(statusText, viewW / 2, viewH * 0.505, viewH * 0.028, COL.rojo, false, true);
   for (const b of menuButtons()) drawMenuButton(b);
+  if (!tierDone[1] || !tierDone[2]) {
+    // El resto (niveles 2 y 3) sigue descargándose en segundo plano.
+    textOutlined("Descargando niveles 2 y 3 en segundo plano...", viewW / 2, viewH * 0.985, viewH * 0.02, COL.gris, false, true);
+  }
 }
 function drawSelect() {
   drawMenuBackground();
@@ -2501,8 +2626,12 @@ function drawLoading() {
     textOutlined("BRIGADA 2030", viewW / 2, viewH * 0.42, viewH * 0.06, COL.blanco, true, true);
     textOutlined("EL POZO DEL TIEMPO", viewW / 2, viewH * 0.52, viewH * 0.035, COL.azul, true, true);
   }
-  const pct = loadTotal ? Math.floor(loadDone / loadTotal * 100) : 0;
-  textOutlined(`Cargando el juego... ${pct}%`, viewW / 2, viewH * 0.64, viewH * 0.03, COL.blanco, false, true);
+  // Si se está esperando el arte de un nivel, el progreso es de ese tier.
+  const pct = waitingLevel
+    ? Math.floor(tierSettled(waitingLevel.tier) / TIER_KEYS[waitingLevel.tier].length * 100)
+    : (loadTotal ? Math.floor(loadDone / loadTotal * 100) : 0);
+  const loadLabel = waitingLevel ? `Cargando el nivel ${waitingLevel.lvl}... ${pct}%` : `Cargando el juego... ${pct}%`;
+  textOutlined(loadLabel, viewW / 2, viewH * 0.64, viewH * 0.03, COL.blanco, false, true);
   const bw = viewW * 0.5, bx = viewW * 0.25, by = viewH * 0.68;
   roundRectPath(bx, by, bw, 16, 8);
   ctx.fillStyle = "rgba(10,14,28,0.85)"; ctx.fill();
@@ -2728,7 +2857,7 @@ class RelayLink {
 // ---------------------------------------------------------------------------
 // Estado de la vista y flujo de pantallas (puerto de GameView)
 // ---------------------------------------------------------------------------
-let screen = "TITLE";           // TITLE SELECT LEVEL HOWTO MULTI ONLINE_WAIT ONLINE_JOIN CLIENT_WAIT PLAYING PAUSED GAMEOVER VICTORY
+let screen = "TITLE";           // TITLE SELECT LEVEL HOWTO MULTI ONLINE_WAIT ONLINE_JOIN CLIENT_WAIT LOADING PLAYING PAUSED GAMEOVER VICTORY
 let pendingMode = "SINGLE";     // SINGLE COOP_LOCAL ONLINE_HOST ONLINE_CLIENT
 let pendingChar = "aqua";
 let pendingChar2 = "yani";
@@ -2852,6 +2981,14 @@ function joinOnline(code) {
     },
     onSnapshot: snap => {
       if (screen === "CLIENT_WAIT") {
+        // Si el anfitrión ya empezó un nivel cuyo arte aún no llegó,
+        // se espera a ese nivel: la siguiente instantánea reintenta.
+        const nivelSnap = parseInt(snap.split("|")[1]);
+        if (!isNaN(nivelSnap) && !tierReadyForLevel(nivelSnap)) {
+          lastSnapshotAt = Date.now();
+          statusText = `Cargando el nivel ${nivelSnap}...`;
+          return;
+        }
         ensureClientEngine(snap);
         if (engine) engine.applySnapshot(snap);
         lastSnapshotAt = Date.now();
@@ -2955,6 +3092,7 @@ function tick() {
       const nivelSnap = parseInt(partes[1]);
       const resultadoSnap = partes[15] || "";
       if (!isNaN(nivelSnap) && (nivelSnap !== eng.level || (screen === "GAMEOVER" && resultadoSnap === ""))) {
+        if (!tierReadyForLevel(nivelSnap)) return; // el arte de ese nivel aún no llegó; el siguiente tick reintenta
         engine = new Engine("ONLINE_CLIENT", eng.p1Char, eng.p2Char, nivelSnap);
         currentLevel = nivelSnap;
         musicPlay(engine.LD.musica);
@@ -3045,20 +3183,14 @@ function onMenuTap(id) {
   }
   else if (id.startsWith("level:")) {
     const lvl = parseInt(id.slice(6)) || 1;
-    if (pendingMode === "SINGLE") startSingle(pendingChar, lvl);
-    else if (pendingMode === "COOP_LOCAL") startCoop(pendingChar, pendingChar2, lvl);
-    else if (pendingMode === "ONLINE_HOST") startOnlineHost(pendingChar, lvl);
-    else startSingle(pendingChar, lvl);
+    beginLevel(pendingMode, pendingChar, pendingChar2, lvl);
   }
   else if (id === "next") {
     const mode = engine ? engine.mode : "SINGLE";
     const c1 = engine ? engine.p1Char : "aqua";
     const c2 = engine ? engine.p2Char : "yani";
     const nextLevel = (engine ? engine.level : 1) + 1;
-    if (mode === "SINGLE") startSingle(c1, nextLevel);
-    else if (mode === "COOP_LOCAL") startCoop(c1, c2, nextLevel);
-    else if (mode === "ONLINE_HOST") startOnlineHost(c1, nextLevel);
-    else startSingle(c1, nextLevel);
+    beginLevel(mode, c1, c2, nextLevel);
   }
   else if (id === "cancel" || id === "back") {
     stopNet();
@@ -3221,6 +3353,7 @@ function render() {
   FIT_VIEW = screen !== "PLAYING" && screen !== "PAUSED";
   switch (screen) {
     case "TITLE": drawTitle(); break;
+    case "LOADING": drawLoading(); break;
     case "SELECT": drawSelect(); break;
     case "LEVEL": drawLevel(); break;
     case "HOWTO": drawHowTo(); break;
@@ -3252,13 +3385,70 @@ function loop(ts) {
     }
     if (steps === 3) accumulator = 0;
     render();
+    if (window.__bootDone !== true) { window.__bootDone = true; var __b = document.getElementById('boot'); if (__b) __b.style.display = 'none'; }
   } catch (err) {
     // Un cuadro malo no debe matar el bucle (igual que en la APK).
     if (window.console) console.error(err);
+    var __bm = document.getElementById('bootmsg');
+    if (__bm) { __bm.textContent = 'Error: ' + (err && err.message ? err.message : err); __bm.style.display = 'block'; }
   }
 }
 preloadAssets(() => {});
 requestAnimationFrame(loop);
+
+// ---------------------------------------------------------------------------
+// Guardado local (una sola descarga): un Service Worker guarda todas las
+// imágenes y la música en el teléfono la primera vez. Después el juego abre
+// desde el teléfono, al instante e incluso sin internet. Los videos del
+// intro/final no se precargan (son pesados); se guardan solos la primera vez
+// que se ven, porque el fetch del Service Worker también los guarda.
+// ---------------------------------------------------------------------------
+(function () {
+  function showSave(msg, done) {
+    var el = document.getElementById('save-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = 'block';
+    if (done) {
+      setTimeout(function () { el.style.display = 'none'; }, 6000);
+    }
+  }
+  function sendAssetList() {
+    if (window.__precacheSent) return;
+    try {
+      var reg = window.__swReg;
+      var target = (reg && reg.active) || navigator.serviceWorker.controller;
+      if (!target) return;
+      window.__precacheSent = true;
+      var urls = Object.keys(MANIFEST).map(function (k) { return 'assets/' + MANIFEST[k]; });
+      urls.push('assets/musica/1_inicio.mp3', 'assets/musica/2_desarrollo.mp3', 'assets/musica/3_final.mp3');
+      target.postMessage({ type: 'PRECACHE', urls: urls });
+      showSave('Guardando imágenes en el teléfono... 0%');
+    } catch (e) {}
+  }
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        window.__swReg = reg;
+        if (navigator.serviceWorker.controller) sendAssetList();
+        else if (reg.active) sendAssetList();
+      }).catch(function () {});
+    });
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('controllerchange', sendAssetList);
+      navigator.serviceWorker.addEventListener('message', function (e) {
+        var d = e.data || {};
+        if (d.type === 'PRECACHE_PROGRESS' && d.total) {
+          var pct = Math.floor(d.done / d.total * 100);
+          showSave('Guardando imágenes en el teléfono... ' + pct + '%');
+        } else if (d.type === 'PRECACHE_DONE') {
+          showSave('Imágenes guardadas en el teléfono. La próxima vez abre al instante.', true);
+        }
+      });
+    }
+  }
+})();
+
 </script>
 </body>
 </html>
