@@ -2650,40 +2650,63 @@ function controlButtons() {
   // Los radios se miden con el lado CORTO de la pantalla. Antes se medían
   // con el alto: en vertical los botones salían gigantes y los del jugador 1
   // se encimaban con los del jugador 2 (en horizontal el lado corto es el
-  // alto, así que ahí la geometría queda exactamente igual que antes).
+  // alto, así que ahí los radios quedan igual que antes).
   const u = Math.min(w, h);
   const portrait = h > w;
   const coop = engine && engine.mode === "COOP_LOCAL";
-  const mk = (id, cx, cy, rr, label) => ({ id, cx: w * cx, cy: h * cy, r: u * rr, label });
+  // mk/trio con la unidad que se les pase: en cooperativo horizontal la
+  // unidad se achica un poco en pantallas angostas (ver abajo).
+  const mkU = uu => (id, cx, cy, rr, label) => ({ id, cx: w * cx, cy: h * cy, r: uu * rr, label });
+  // Trío de flechas: los centros van separados 2.15 radios para que nunca
+  // se encimen (con fracciones fijas del ancho se encimaban en pantallas
+  // poco anchas, como 1919x998) y el grupo entero queda dentro de la mitad
+  // del jugador que le toca, para no cruzar la línea del centro.
+  const trioU = uu => (centerX, cy, rr) => {
+    const r = uu * rr, s = r * 2.15;
+    const half = centerX < w / 2 ? [4, w / 2 - 4] : [w / 2 + 4, w - 4];
+    let x0 = centerX - s, x2 = centerX + s;
+    if (x0 - r < half[0]) { x0 = half[0] + r; x2 = x0 + 2 * s; }
+    if (x2 + r > half[1]) { x2 = half[1] - r; x0 = x2 - 2 * s; }
+    const cx = (x0 + x2) / 2;
+    const m = mkU(uu);
+    return [m("LEFT", (cx - s) / w, cy / h, rr, "◀"), m("DOWN", cx / w, cy / h, rr, "▼"), m("RIGHT", (cx + s) / w, cy / h, rr, "▶")];
+  };
   if (coop) {
+    const mk = mkU(u), trio = trioU(u);
     if (!portrait) {
+      // Horizontal: dos filas (acciones arriba, flechas abajo) con separación
+      // mayor que la suma de radios, para que ningún botón se encime en
+      // pantallas 16:9 o 4:3. En pantallas angostas los radios se achican un
+      // poco para que SALTO y DISPARO no se toquen entre sí.
+      const uc = Math.min(u, Math.hypot(0.085 * w, 0.08 * h) / 0.153 * 0.97);
+      const mkC = mkU(uc), trioC = trioU(uc);
       return [
-        mk("LEFT", 0.055, 0.84, 0.075, "◀"), mk("DOWN", 0.125, 0.84, 0.075, "▼"), mk("RIGHT", 0.195, 0.84, 0.075, "▶"),
-        mk("JUMP", 0.30, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.385, 0.88, 0.067, "DISPARO"),
-        mk("LEFT", 0.805, 0.84, 0.075, "◀"), mk("DOWN", 0.875, 0.84, 0.075, "▼"), mk("RIGHT", 0.945, 0.84, 0.075, "▶"),
-        mk("JUMP", 0.70, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.615, 0.88, 0.067, "DISPARO")
+        mkC("JUMP", 0.30, 0.70, 0.086, "SALTO"), mkC("SHOOT", 0.385, 0.78, 0.067, "DISPARO"),
+        ...trioC(0.125 * w, 0.88 * h, 0.075),
+        mkC("JUMP", 0.70, 0.70, 0.086, "SALTO"), mkC("SHOOT", 0.615, 0.78, 0.067, "DISPARO"),
+        ...trioC(0.875 * w, 0.88 * h, 0.075)
       ];
     }
-    // Vertical: dos filas por jugador (acciones arriba, flechas abajo), con
-    // las flechas separadas para que no se encimen. En una sola fila no
-    // caben 5 botones por mitad en vertical.
+    // Vertical: dos filas por jugador (acciones arriba, flechas abajo). En
+    // una sola fila no caben 5 botones por mitad en vertical.
     return [
       mk("JUMP", 0.16, 0.78, 0.086, "SALTO"), mk("SHOOT", 0.36, 0.78, 0.067, "DISPARO"),
-      mk("LEFT", 0.08, 0.91, 0.07, "◀"), mk("DOWN", 0.24, 0.91, 0.07, "▼"), mk("RIGHT", 0.40, 0.91, 0.07, "▶"),
+      ...trio(0.24 * w, 0.91 * h, 0.07),
       mk("JUMP", 0.84, 0.78, 0.086, "SALTO"), mk("SHOOT", 0.64, 0.78, 0.067, "DISPARO"),
-      mk("LEFT", 0.60, 0.91, 0.07, "◀"), mk("DOWN", 0.76, 0.91, 0.07, "▼"), mk("RIGHT", 0.92, 0.91, 0.07, "▶")
+      ...trio(0.76 * w, 0.91 * h, 0.07)
     ];
   }
+  const mk = mkU(u), trio = trioU(u);
   if (!portrait) {
     return [
-      mk("LEFT", 0.06, 0.84, 0.075, "◀"), mk("DOWN", 0.13, 0.84, 0.075, "▼"), mk("RIGHT", 0.20, 0.84, 0.075, "▶"),
+      ...trio(0.13 * w, 0.84 * h, 0.075),
       mk("RUN", 0.90, 0.52, 0.052, "CORRER"), mk("JUMP", 0.885, 0.76, 0.09, "SALTO"), mk("SHOOT", 0.775, 0.88, 0.071, "DISPARO")
     ];
   }
   // Vertical, un jugador: las flechas en fila abajo a la izquierda (con su
   // separación para que no se encimen), y salto/disparo a la derecha.
   return [
-    mk("LEFT", 0.08, 0.91, 0.07, "◀"), mk("DOWN", 0.24, 0.91, 0.07, "▼"), mk("RIGHT", 0.40, 0.91, 0.07, "▶"),
+    ...trio(0.24 * w, 0.91 * h, 0.07),
     mk("RUN", 0.90, 0.52, 0.052, "CORRER"), mk("JUMP", 0.885, 0.76, 0.09, "SALTO"), mk("SHOOT", 0.775, 0.88, 0.071, "DISPARO")
   ];
 }
