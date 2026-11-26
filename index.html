@@ -132,6 +132,10 @@ const C = {
   VELOCIDAD: 4.2, VELOCIDAD_CORRER: 7.0, VELOCIDAD_AGACHADO: 2.4,
   FUERZA_SALTO: 15.0, FUERZA_SALTO_DOBLE: 12.5, SALTOS_MAXIMOS: 2,
   VIDAS: 5, INVULNERABLE: 90,
+  // Revivir agachándose (cooperativo): distancia máxima al caído, tiempo
+  // agachado junto a él, costo en gotas y corazones con los que regresa.
+  REVIVE_DISTANCIA: 120, REVIVE_ALTURA: 100, REVIVE_TIEMPO: 90,
+  REVIVE_GOTAS: 10, REVIVE_VIDAS: 2,
   ANCHO_JUGADOR: 46, ALTO_JUGADOR: 112, ALTO_AGACHADO: 72,
   RECARGA_DISPARO: 22, VELOCIDAD_BOLA: 11.0, ALCANCE_BOLA: 620,
   VELOCIDAD_ENEMIGO: 1.5, ESPERA_ATAQUE_MIN: 150, ESPERA_ATAQUE_MAX: 260,
@@ -1074,6 +1078,7 @@ class Engine {
     this.camaraX = 0; this.camaraY = 0; this.alzar = 0;
     this.tick = 0; this.temblor = 0;
     this.aviso = null; this.avisoTicks = 0;
+    this.revive = null; // { caido, heroe, progreso, sinGotas } o null
     this.dialogo = new Dialogo(LD.dialogoInicio, p1Char);
     this.dialogoFinal = null;
     this.dialogoKind = "I";
@@ -1402,7 +1407,11 @@ class Engine {
     this.actualizarAlzado();
     this.moverCamara();
 
-    // derrota: todos los jugadores caídos (sin revive, como la v1.1.5+)
+    // revive: un compañero vivo y agachado junto a un caído lo levanta
+    // (cuesta 10 gotas); solo después se revisa la derrota.
+    this.actualizarRevive(false);
+
+    // derrota: todos los jugadores caídos (con revive desde la v1.4.5 web)
     const vivos = this.players.filter(p => !p.derrotado);
     if (vivos.length === 0) {
       const caidos = this.players.every(p => p.anim.state === "caido" && p.anim.finished());
@@ -1521,6 +1530,45 @@ class Engine {
       return true;
     });
     if (jefeVencidoAhora) this.alVencerJefe();
+  }
+  // Revivir agachándose (cooperativo): un jugador vivo, agachado y en el
+  // suelo junto a un caído lo levanta tras REVIVE_TIEMPO ticks; cuesta
+  // REVIVE_GOTAS gotas del que revive y el caído vuelve con REVIVE_VIDAS
+  // corazones e invulnerable. soloPantalla = true: solo actualiza el
+  // indicador (invitado online, que no simula: el anfitrión revive de
+  // verdad; el invitado solo ve el progreso).
+  actualizarRevive(soloPantalla) {
+    const caidos = this.players.filter(p => p.derrotado);
+    if (caidos.length === 0 || this.players.length < 2) { this.revive = null; return; }
+    const caido = caidos[0];
+    let heroe = null;
+    for (const pl of this.players) {
+      if (pl.derrotado || !pl.crouched || !pl.onGround) continue;
+      if (Math.abs(pl.rect.centerX - caido.rect.centerX) > C.REVIVE_DISTANCIA) continue;
+      if (Math.abs(pl.rect.centerY - caido.rect.centerY) > C.REVIVE_ALTURA) continue;
+      heroe = pl; break;
+    }
+    if (!heroe) { this.revive = null; return; }
+    if (heroe.gotas < C.REVIVE_GOTAS) {
+      this.revive = { caido, heroe, progreso: 0, sinGotas: true };
+      return;
+    }
+    const progreso = (this.revive && this.revive.caido === caido && this.revive.heroe === heroe && !this.revive.sinGotas)
+      ? this.revive.progreso + 1 : 1;
+    if (!soloPantalla && progreso >= C.REVIVE_TIEMPO) {
+      heroe.gotas -= C.REVIVE_GOTAS;
+      caido.derrotado = false;
+      caido.vidas = C.REVIVE_VIDAS;
+      caido.invulnerable = C.INVULNERABLE;
+      caido.aturdido = 0;
+      caido.ajustarAltura(false);
+      caido.anim.set("quieto");
+      this.aviso = "¡" + (caido.character === "yani" ? "YANI" : "AQUA") + " REVIVIDO! -" + C.REVIVE_GOTAS + " GOTAS";
+      this.avisoTicks = 150;
+      this.revive = null;
+      return;
+    }
+    this.revive = { caido, heroe, progreso, sinGotas: false };
   }
   actualizarBombas() {
     for (const bomba of this.bombs) {
@@ -2225,6 +2273,38 @@ function drawGame() {
     }
     drawSprite(bmp, pcx, pbottom, pl.facing, alpha, pl.character === "yani" ? "#d76bb0" : "#3a96d2");
   });
+  // Indicador de revive: sobre el jugador caído, texto pulsante + barra de
+  // progreso (o aviso de que al compañero le faltan gotas).
+  const rv = eng.revive;
+  if (rv && rv.caido) {
+    const idx = eng.players.indexOf(rv.caido);
+    let rcx, rtop;
+    if (isClient && interpInit) {
+      if (idx === 0) { rcx = interpP1X - cx; rtop = interpP1Y - cy - rv.caido.rect.h / 2; }
+      else { rcx = interpP2X - cx; rtop = interpP2Y - cy - rv.caido.rect.h / 2; }
+    } else {
+      rcx = rv.caido.rect.centerX - cx; rtop = rv.caido.rect.top - cy;
+    }
+    const pulso = 0.65 + 0.35 * Math.sin(Date.now() / 180);
+    ctx.save();
+    if (rv.sinGotas) {
+      const faltan = C.REVIVE_GOTAS - rv.heroe.gotas;
+      ctx.globalAlpha = pulso;
+      textOutlined("¡FALTAN " + faltan + " GOTAS!", rcx, rtop - 44, 22, COL.rojo, true, true);
+    } else {
+      ctx.globalAlpha = pulso;
+      textOutlined("¡REVÍVEME!", rcx, rtop - 44, 22, COL.azul, true, true);
+      ctx.globalAlpha = 1;
+      const bw = 110, bh = 12, bx = rcx - bw / 2, by = rtop - 32;
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(bx - 3, by - 3, bw + 6, bh + 6);
+      ctx.strokeStyle = COL.blanco; ctx.lineWidth = 2;
+      ctx.strokeRect(bx - 3, by - 3, bw + 6, bh + 6);
+      ctx.fillStyle = "#3ec6ff";
+      ctx.fillRect(bx, by, bw * Math.min(1, rv.progreso / C.REVIVE_TIEMPO), bh);
+    }
+    ctx.restore();
+  }
   for (const a of L.adornos) {
     if (!a.delante) continue;
     const im = worldImg(eng.level, a.imagen);
@@ -2537,6 +2617,8 @@ function drawHowTo() {
     "",
     "COOPERATIVO: dos jugadores en el mismo teléfono,",
     "cada uno con sus propios controles.",
+    "Si un compañero cae: agáchate junto a él para",
+    "revivirlo (cuesta 10 gotas de agua).",
     "ONLINE: juega con un amigo en su Android o iPhone,",
     "cada quien en su casa, con el código de sala BR-####."
   ]);
@@ -2715,6 +2797,66 @@ function pauseButton() {
   // el botón quedaba medio fuera del borde derecho.
   const r = Math.min(viewW, viewH) * 0.045;
   return { id: "PAUSE", cx: Math.min(viewW * 0.965, viewW - r - 6), cy: viewH * 0.07, r, label: "II" };
+}
+// ---------------------------------------------------------------------------
+// Pantalla completa: botón visible siempre (arriba a la derecha, a la
+// izquierda del botón de pausa), con la Fullscreen API y el fallback
+// webkit de Safari. En iPhone Safari no se puede poner en pantalla
+// completa un elemento genérico: el intento no hace nada y no rompe el
+// juego (el juego ya ocupa toda la ventana).
+// ---------------------------------------------------------------------------
+function fullscreenButton() {
+  const r = Math.min(viewW, viewH) * 0.045;
+  const pb = pauseButton();
+  return { id: "FULLSCREEN", cx: pb.cx - 2 * r - 14, cy: pb.cy, r };
+}
+function estaEnPantallaCompleta() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function cambiarPantallaCompleta() {
+  try {
+    if (estaEnPantallaCompleta()) {
+      if (document.exitFullscreen) {
+        const p = document.exitFullscreen();
+        if (p && p.catch) p.catch(function () {});
+      } else if (document.webkitExitFullscreen) {
+        try { document.webkitExitFullscreen(); } catch (e) {}
+      }
+    } else {
+      const el = document.documentElement;
+      if (el.requestFullscreen) {
+        const p = el.requestFullscreen();
+        if (p && p.catch) p.catch(function () {});
+      } else if (el.webkitRequestFullscreen) {
+        try { el.webkitRequestFullscreen(); } catch (e) {}
+      }
+    }
+  } catch (e) { /* iPhone u otros: no se puede, el juego sigue igual */ }
+}
+function dibujarBotonPantallaCompleta() {
+  const fb = fullscreenButton();
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "rgba(18,26,48,0.43)";
+  ctx.beginPath(); ctx.arc(fb.cx, fb.cy, fb.r, 0, 6.3); ctx.fill();
+  ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(fb.cx, fb.cy, fb.r, 0, 6.3); ctx.stroke();
+  // Icono de esquinas: brazos hacia adentro para entrar, hacia afuera
+  // para salir (el icono cambia según el estado real).
+  const enCompleta = estaEnPantallaCompleta();
+  const d = fb.r * 0.32, len = fb.r * 0.28;
+  ctx.strokeStyle = COL.blanco; ctx.lineWidth = Math.max(2, fb.r * 0.09);
+  ctx.lineCap = "round";
+  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    const vx = fb.cx + sx * d, vy = fb.cy + sy * d;
+    const dx = enCompleta ? sx : -sx, dy = enCompleta ? sy : -sy;
+    ctx.beginPath();
+    ctx.moveTo(vx + dx * len, vy);
+    ctx.lineTo(vx, vy);
+    ctx.lineTo(vx, vy + dy * len);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 function drawControls() {
   for (const btn of controlButtons()) {
@@ -3170,6 +3312,7 @@ function tick() {
         clearEdges(p2Input);
       }
       updateInterp(cur);
+      cur.actualizarRevive(true); // solo el indicador: el anfitrión revive
       if (cur.resultado === "ganado") screen = "VICTORY";
       if (cur.resultado === "perdido") screen = "GAMEOVER";
     }
@@ -3276,6 +3419,10 @@ function onMenuTap(id) {
 function dist2(x1, y1, x2, y2) { const dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy; }
 function handlePress(pid, x, y) {
   ensureMusic();
+  // Botón de pantalla completa: visible en todas las pantallas, arriba a
+  // la derecha junto al botón de pausa.
+  const fb = fullscreenButton();
+  if (dist2(x, y, fb.cx, fb.cy) <= fb.r * fb.r) { cambiarPantallaCompleta(); return; }
   if (screen === "PLAYING") {
     const eng = engine;
     const pb = pauseButton();
@@ -3421,6 +3568,9 @@ function render() {
     case "GAMEOVER": drawEnd(false); break;
     case "VICTORY": drawEnd(true); break;
   }
+  // Botón de pantalla completa: visible en todas las pantallas (encima de
+  // menús y del juego, junto al botón de pausa).
+  dibujarBotonPantallaCompleta();
 }
 let lastTs = 0, accumulator = 0;
 function loop(ts) {
