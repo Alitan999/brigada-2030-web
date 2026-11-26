@@ -3349,7 +3349,10 @@ function render() {
   ctx.fillStyle = "rgb(12,10,18)";
   ctx.fillRect(0, 0, viewW, viewH);
   if (!assetsReady) { drawLoading(); return; }
-  loadVideo("intro"); // la cinemática de título se carga en segundo plano
+  // La cinemática de título se carga en segundo plano, DESPUÉS del primer
+  // cuadro (antes arrancaba 120 imágenes junto con las 186 del Tier 0 y
+  // saturaba la conexión del teléfono antes de pintar el menú).
+  if (!window.__introVideoQueued) { window.__introVideoQueued = true; setTimeout(function () { loadVideo("intro"); }, 1500); }
   FIT_VIEW = screen !== "PLAYING" && screen !== "PAUSED";
   switch (screen) {
     case "TITLE": drawTitle(); break;
@@ -3415,16 +3418,23 @@ requestAnimationFrame(loop);
   }
   function sendAssetList() {
     if (window.__precacheSent) return;
-    try {
-      var reg = window.__swReg;
-      var target = (reg && reg.active) || navigator.serviceWorker.controller;
-      if (!target) return;
-      window.__precacheSent = true;
-      var urls = Object.keys(MANIFEST).map(function (k) { return 'assets/' + MANIFEST[k]; });
-      urls.push('assets/musica/1_inicio.mp3', 'assets/musica/2_desarrollo.mp3', 'assets/musica/3_final.mp3');
-      target.postMessage({ type: 'PRECACHE', urls: urls });
-      showSave('Guardando imágenes en el teléfono... 0%');
-    } catch (e) {}
+    if (window.__precacheTimer) return;
+    // Esperar 5 s: que el Tier 0 (el menú y el nivel 1) use primero la
+    // conexión. Antes el guardado de 517 archivos competía desde el
+    // segundo cero con la propia carga del juego.
+    window.__precacheTimer = setTimeout(function () {
+      window.__precacheTimer = null;
+      try {
+        var reg = window.__swReg;
+        var target = (reg && reg.active) || navigator.serviceWorker.controller;
+        if (!target) return;
+        window.__precacheSent = true;
+        var urls = Object.keys(MANIFEST).map(function (k) { return 'assets/' + MANIFEST[k]; });
+        urls.push('assets/musica/1_inicio.mp3', 'assets/musica/2_desarrollo.mp3', 'assets/musica/3_final.mp3');
+        target.postMessage({ type: 'PRECACHE', urls: urls });
+        showSave('Guardando imágenes en el teléfono... 0%');
+      } catch (e) {}
+    }, 5000);
   }
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     window.addEventListener('load', function () {
