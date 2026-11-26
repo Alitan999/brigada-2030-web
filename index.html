@@ -2647,24 +2647,51 @@ function drawLoading() {
 // ---------------------------------------------------------------------------
 function controlButtons() {
   const w = viewW, h = viewH;
-  const r = h * 0.075;
+  // Los radios se miden con el lado CORTO de la pantalla. Antes se medían
+  // con el alto: en vertical los botones salían gigantes y los del jugador 1
+  // se encimaban con los del jugador 2 (en horizontal el lado corto es el
+  // alto, así que ahí la geometría queda exactamente igual que antes).
+  const u = Math.min(w, h);
+  const portrait = h > w;
   const coop = engine && engine.mode === "COOP_LOCAL";
-  const mk = (id, cx, cy, rr, label) => ({ id, cx: w * cx, cy: h * cy, r: h * rr, label });
+  const mk = (id, cx, cy, rr, label) => ({ id, cx: w * cx, cy: h * cy, r: u * rr, label });
   if (coop) {
+    if (!portrait) {
+      return [
+        mk("LEFT", 0.055, 0.84, 0.075, "◀"), mk("DOWN", 0.125, 0.84, 0.075, "▼"), mk("RIGHT", 0.195, 0.84, 0.075, "▶"),
+        mk("JUMP", 0.30, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.385, 0.88, 0.067, "DISPARO"),
+        mk("LEFT", 0.805, 0.84, 0.075, "◀"), mk("DOWN", 0.875, 0.84, 0.075, "▼"), mk("RIGHT", 0.945, 0.84, 0.075, "▶"),
+        mk("JUMP", 0.70, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.615, 0.88, 0.067, "DISPARO")
+      ];
+    }
+    // Vertical: dos filas por jugador (acciones arriba, flechas abajo), con
+    // las flechas separadas para que no se encimen. En una sola fila no
+    // caben 5 botones por mitad en vertical.
     return [
-      mk("LEFT", 0.055, 0.84, 0.075, "◀"), mk("DOWN", 0.125, 0.84, 0.075, "▼"), mk("RIGHT", 0.195, 0.84, 0.075, "▶"),
-      mk("JUMP", 0.30, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.385, 0.88, 0.067, "DISPARO"),
-      mk("LEFT", 0.805, 0.84, 0.075, "◀"), mk("DOWN", 0.875, 0.84, 0.075, "▼"), mk("RIGHT", 0.945, 0.84, 0.075, "▶"),
-      mk("JUMP", 0.70, 0.80, 0.086, "SALTO"), mk("SHOOT", 0.615, 0.88, 0.067, "DISPARO")
+      mk("JUMP", 0.16, 0.78, 0.086, "SALTO"), mk("SHOOT", 0.36, 0.78, 0.067, "DISPARO"),
+      mk("LEFT", 0.08, 0.91, 0.07, "◀"), mk("DOWN", 0.24, 0.91, 0.07, "▼"), mk("RIGHT", 0.40, 0.91, 0.07, "▶"),
+      mk("JUMP", 0.84, 0.78, 0.086, "SALTO"), mk("SHOOT", 0.64, 0.78, 0.067, "DISPARO"),
+      mk("LEFT", 0.60, 0.91, 0.07, "◀"), mk("DOWN", 0.76, 0.91, 0.07, "▼"), mk("RIGHT", 0.92, 0.91, 0.07, "▶")
     ];
   }
+  if (!portrait) {
+    return [
+      mk("LEFT", 0.06, 0.84, 0.075, "◀"), mk("DOWN", 0.13, 0.84, 0.075, "▼"), mk("RIGHT", 0.20, 0.84, 0.075, "▶"),
+      mk("RUN", 0.90, 0.52, 0.052, "CORRER"), mk("JUMP", 0.885, 0.76, 0.09, "SALTO"), mk("SHOOT", 0.775, 0.88, 0.071, "DISPARO")
+    ];
+  }
+  // Vertical, un jugador: las flechas en fila abajo a la izquierda (con su
+  // separación para que no se encimen), y salto/disparo a la derecha.
   return [
-    mk("LEFT", 0.06, 0.84, 0.075, "◀"), mk("DOWN", 0.13, 0.84, 0.075, "▼"), mk("RIGHT", 0.20, 0.84, 0.075, "▶"),
+    mk("LEFT", 0.08, 0.91, 0.07, "◀"), mk("DOWN", 0.24, 0.91, 0.07, "▼"), mk("RIGHT", 0.40, 0.91, 0.07, "▶"),
     mk("RUN", 0.90, 0.52, 0.052, "CORRER"), mk("JUMP", 0.885, 0.76, 0.09, "SALTO"), mk("SHOOT", 0.775, 0.88, 0.071, "DISPARO")
   ];
 }
 function pauseButton() {
-  return { id: "PAUSE", cx: viewW * 0.965, cy: viewH * 0.07, r: viewH * 0.045, label: "II" };
+  // Radio con el lado corto y centrado dentro de la pantalla: en vertical
+  // el botón quedaba medio fuera del borde derecho.
+  const r = Math.min(viewW, viewH) * 0.045;
+  return { id: "PAUSE", cx: Math.min(viewW * 0.965, viewW - r - 6), cy: viewH * 0.07, r, label: "II" };
 }
 function drawControls() {
   for (const btn of controlButtons()) {
@@ -2674,7 +2701,9 @@ function drawControls() {
     ctx.beginPath(); ctx.arc(btn.cx, btn.cy, btn.r, 0, 6.3); ctx.fill();
     ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(btn.cx, btn.cy, btn.r, 0, 6.3); ctx.stroke();
-    const size = btn.label.length > 2 ? viewH * 0.028 : viewH * 0.05;
+    // La letra se mide con el radio del propio botón, no con el alto de la
+    // pantalla: en vertical la letra quedaba más grande que el botón.
+    const size = btn.label.length > 2 ? btn.r * 0.42 : btn.r * 0.72;
     textOutlined(btn.label, btn.cx, btn.cy + size * 0.35, size, COL.blanco, false, true);
   }
   const pb = pauseButton();
@@ -2682,7 +2711,7 @@ function drawControls() {
   ctx.beginPath(); ctx.arc(pb.cx, pb.cy, pb.r, 0, 6.3); ctx.fill();
   ctx.strokeStyle = COL.panelStroke; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.arc(pb.cx, pb.cy, pb.r, 0, 6.3); ctx.stroke();
-  textOutlined(pb.label, pb.cx, pb.cy + viewH * 0.03 * 0.35, viewH * 0.03, COL.blanco, false, true);
+  textOutlined(pb.label, pb.cx, pb.cy + pb.r * 0.6 * 0.35, pb.r * 0.6, COL.blanco, false, true);
 }
 // ---------------------------------------------------------------------------
 // Red online: el MISMO protocolo de texto de la APK contra el relay
